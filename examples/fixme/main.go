@@ -33,26 +33,28 @@ func run() error {
 		return fmt.Errorf("no command specified")
 	}
 
-	// Find the index of the second "--" if it exists
-	descriptionIndex := -1
-	for i, arg := range args {
-		if arg == "--" {
-			descriptionIndex = i
-			break
-		}
-	}
-
+	// Parse flags
+	var useHistory bool
+	var description string
 	var command string
 	var commandArgs []string
-	var description string
 
-	if descriptionIndex != -1 {
-		command = args[0]
-		commandArgs = args[1:descriptionIndex]
-		description = strings.Join(args[descriptionIndex+1:], " ")
-	} else {
-		command = args[0]
-		commandArgs = args[1:]
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-hist":
+			useHistory = true
+		case "-desc":
+			if i+1 < len(args) {
+				description = args[i+1]
+				i++
+			} else {
+				return fmt.Errorf("-desc flag requires a value")
+			}
+		default:
+			command = args[i]
+			commandArgs = args[i+1:]
+			i = len(args) // Exit the loop
+		}
 	}
 
 	llm, err := openai.New()
@@ -71,16 +73,20 @@ func run() error {
 
 		fmt.Printf("Command failed. Error: %v\nOutput: %s\n", err, output)
 
-		suggestion, err := getSuggestion(llm, command, commandArgs, err.Error(), output, description, fixHistory)
+		suggestion, fixDescription, err := getSuggestion(llm, command, commandArgs, err.Error(), output, description, fixHistory)
 		if err != nil {
 			return fmt.Errorf("failed to get suggestion: %w", err)
 		}
 
 		fmt.Println("Suggested command:")
 		fmt.Println(suggestion)
+		fmt.Println("Fix description:")
+		fmt.Println(fixDescription)
 
-		// Add the suggestion to the fix history
-		fixHistory = append(fixHistory, suggestion)
+		// Add the suggestion to the fix history if useHistory is true
+		if useHistory {
+			fixHistory = append(fixHistory, suggestion)
+		}
 
 		// Ask the user if they want to continue
 		fmt.Print("Do you want to apply this suggestion? (y/n): ")
@@ -109,7 +115,7 @@ func runCommand(name string, args ...string) (string, error) {
 	return string(output), err
 }
 
-func getSuggestion(llm llms.LLM, command string, args []string, errMsg, output, description string, fixHistory []string) (string, error) {
+func getSuggestion(llm llms.LLM, command string, args []string, errMsg, output, description string, fixHistory []string) (string, string, error) {
 	ctx := fmt.Sprintf("Command: %s %s\nError: %s\nOutput: %s\nDescription: %s",
 		command, strings.Join(args, " "), errMsg, output, description)
 
@@ -124,17 +130,22 @@ Fix history:
 
 Suggest an appropriate 'fixprog' invocation to address the issue.
 If a description is provided, use it to guide your suggestion.
-Include the -hist flag with smart fixme instructions based on the fix history.
-Provide only the suggested command without any additional explanation.`, ctx, historyContext)
+Include the -hist bool flag.
+Include the -desc flag with a brief description of the fix.
+Provide the suggested command on the first line and the fix description on the second line.`, ctx, historyContext)
 
 	response, err := llm.Call(context.Background(), prompt)
 	if err != nil {
-		return "", fmt.Errorf("AI request failed: %w", err)
+		return "", "", fmt.Errorf("AI request failed: %w", err)
 	}
 
 	// Clean up the response
-	suggestion := strings.TrimSpace(response)
-	suggestion = strings.Split(suggestion, "\n")[0] // Take only the first line
+	lines := strings.Split(strings.TrimSpace(response), "\n")
+	suggestion := lines[0]
+	fixDescription := ""
+	if len(lines) > 1 {
+		fixDescription = lines[1]
+	}
 
-	return suggestion, nil
+	return suggestion, fixDescription, nil
 }
