@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -18,6 +19,8 @@ import (
 //go:embed system-prompt.txt
 var systemPrompt string
 
+const historyFile = ".fixme-hist"
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -30,6 +33,7 @@ func run() error {
 	description := flag.String("desc", "", "Description of the change to be made")
 	testCmd := flag.String("test", "", "Command to run to check if the problem is fixed")
 	verbose := flag.Bool("verbose", false, "Enable verbose output")
+	hist := flag.Bool("hist", false, "Save/restore from .fixme-hist")
 	flag.Parse()
 
 	if *description == "" {
@@ -41,6 +45,9 @@ func run() error {
 		fmt.Printf("Change description: %s\n", *description)
 		if *testCmd != "" {
 			fmt.Printf("Test command: %s\n", *testCmd)
+		}
+		if *hist {
+			fmt.Println("History mode enabled")
 		}
 	}
 
@@ -95,6 +102,14 @@ func run() error {
 
 	attempts := 0
 	maxAttempts := 5
+
+	var history []map[string]string
+	if *hist {
+		history, err = loadHistory(*dir)
+		if err != nil {
+			return fmt.Errorf("failed to load history: %w", err)
+		}
+	}
 
 	for {
 		if attempts >= maxAttempts {
@@ -175,6 +190,13 @@ func run() error {
 		}
 		if *verbose {
 			fmt.Println("Changes applied successfully.")
+		}
+
+		if *hist {
+			history = append(history, changes)
+			if err := saveHistory(*dir, history); err != nil {
+				return fmt.Errorf("failed to save history: %w", err)
+			}
 		}
 
 		if *testCmd != "" {
@@ -348,5 +370,37 @@ func revertToState(dir string, state map[string]string) error {
 			return fmt.Errorf("failed to write file %s: %w", fullPath, err)
 		}
 	}
+	return nil
+}
+
+func loadHistory(dir string) ([]map[string]string, error) {
+	histPath := filepath.Join(dir, historyFile)
+	data, err := ioutil.ReadFile(histPath)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read history file: %w", err)
+	}
+
+	var history []map[string]string
+	if err := json.Unmarshal(data, &history); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal history: %w", err)
+	}
+
+	return history, nil
+}
+
+func saveHistory(dir string, history []map[string]string) error {
+	histPath := filepath.Join(dir, historyFile)
+	data, err := json.Marshal(history)
+	if err != nil {
+		return fmt.Errorf("failed to marshal history: %w", err)
+	}
+
+	if err := ioutil.WriteFile(histPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write history file: %w", err)
+	}
+
 	return nil
 }
