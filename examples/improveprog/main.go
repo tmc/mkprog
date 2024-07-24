@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/tmc/langchaingo/llms"
@@ -17,6 +18,7 @@ import (
 var systemPrompt string
 
 var verbose bool
+var dir string
 
 func main() {
 	if err := run(); err != nil {
@@ -27,25 +29,32 @@ func main() {
 
 func run() error {
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose output")
+	flag.StringVar(&dir, "dir", ".", "Directory to operate in")
 	flag.Parse()
 
 	args := flag.Args()
 	if len(args) < 2 {
-		return fmt.Errorf("usage: %s [-verbose] <file> <change description>", os.Args[0])
+		return fmt.Errorf("usage: %s [-verbose] [-dir <directory>] <file> <change description>", os.Args[0])
 	}
 
 	filename := args[0]
 	changeDescription := strings.Join(args[1:], " ")
 
 	if verbose {
-		fmt.Printf("File: %s\nChange description: %s\n", filename, changeDescription)
+		fmt.Printf("Directory: %s\nFile: %s\nChange description: %s\n", dir, filename, changeDescription)
+	}
+
+	// Change to the specified directory
+	if err := os.Chdir(dir); err != nil {
+		return fmt.Errorf("error changing to directory %s: %w", dir, err)
 	}
 
 	if !isGitClean() {
 		return fmt.Errorf("git working directory is not clean")
 	}
 
-	originalContent, err := os.ReadFile(filename)
+	fullPath := filepath.Join(dir, filename)
+	originalContent, err := os.ReadFile(fullPath)
 	if err != nil {
 		return fmt.Errorf("error reading file: %w", err)
 	}
@@ -61,7 +70,7 @@ func run() error {
 		return fmt.Errorf("error improving program: %w", err)
 	}
 
-	if err := os.WriteFile(filename, []byte(improvedContent), 0644); err != nil {
+	if err := os.WriteFile(fullPath, []byte(improvedContent), 0644); err != nil {
 		return fmt.Errorf("error writing improved content: %w", err)
 	}
 
