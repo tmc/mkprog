@@ -24,11 +24,15 @@ func main() {
 }
 
 func run() error {
-	programPath := flag.String("program", "", "Path to the program to evaluate")
+	programPath := flag.String("program", ".", "Path to the program to evaluate (defaults to current directory)")
 	flag.Parse()
 
-	if *programPath == "" {
-		return fmt.Errorf("program path is required")
+	if *programPath == "." {
+		var err error
+		*programPath, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current working directory: %w", err)
+		}
 	}
 
 	rules, err := getRules(*programPath)
@@ -36,12 +40,12 @@ func run() error {
 		return fmt.Errorf("failed to get rules: %w", err)
 	}
 
-	programContent, err := os.ReadFile(*programPath)
+	programContent, err := readProgramContent(*programPath)
 	if err != nil {
-		return fmt.Errorf("failed to read program file: %w", err)
+		return fmt.Errorf("failed to read program content: %w", err)
 	}
 
-	evaluation, err := evaluateProgram(string(programContent), rules)
+	evaluation, err := evaluateProgram(programContent, rules)
 	if err != nil {
 		return fmt.Errorf("failed to evaluate program: %w", err)
 	}
@@ -52,11 +56,9 @@ func run() error {
 
 func getRules(programPath string) (string, error) {
 	defaultRules := `
-1. Follow idiomatic Go practices
+1. Be unix in style and substance
 2. Use proper error handling
-3. Include appropriate comments
 4. Maintain consistent code formatting
-5. Use meaningful variable and function names
 `
 
 	ruleFile := findRuleFile(programPath)
@@ -86,6 +88,53 @@ func findRuleFile(startPath string) string {
 		dir = parent
 	}
 	return ""
+}
+
+func readProgramContent(programPath string) (string, error) {
+	fileInfo, err := os.Stat(programPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	if fileInfo.IsDir() {
+		return readDirectoryContent(programPath)
+	}
+
+	content, err := os.ReadFile(programPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read program file: %w", err)
+	}
+
+	return string(content), nil
+}
+
+func readDirectoryContent(dirPath string) (string, error) {
+	var content strings.Builder
+
+	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".go") {
+			fileContent, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("failed to read file %s: %w", path, err)
+			}
+
+			content.WriteString(fmt.Sprintf("// File: %s\n", path))
+			content.Write(fileContent)
+			content.WriteString("\n\n")
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to read directory content: %w", err)
+	}
+
+	return content.String(), nil
 }
 
 func evaluateProgram(programContent, rules string) (string, error) {
