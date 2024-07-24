@@ -144,7 +144,7 @@ func evaluateProgram(programContent, rules string) (string, error) {
 		return "", fmt.Errorf("failed to create OpenAI client: %w", err)
 	}
 
-	prompt := fmt.Sprintf("Evaluate the following Go program based on these rules:\n\n%s\n\nProgram:\n\n%s", rules, programContent)
+	prompt := fmt.Sprintf("Evaluate the following Go program based on these rules:\n\n%s\n\nProgram:\n\n%s\n\nProvide a very tight and brief evaluation of the extent to which the program complies with the rules.", rules, programContent)
 
 	messages := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
