@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,15 +34,14 @@ func run() error {
 	flag.Parse()
 
 	args := flag.Args()
-	if len(args) < 2 {
-		return fmt.Errorf("usage: %s [-verbose] [-dir <directory>] <file> <change description>", os.Args[0])
+	if len(args) < 1 {
+		return fmt.Errorf("usage: %s [-verbose] [-dir <directory>] <change description>", os.Args[0])
 	}
 
-	filename := args[0]
-	changeDescription := strings.Join(args[1:], " ")
+	changeDescription := strings.Join(args, " ")
 
 	if verbose {
-		fmt.Printf("Directory: %s\nFile: %s\nChange description: %s\n", dir, filename, changeDescription)
+		fmt.Printf("Directory: %s\nChange description: %s\n", dir, changeDescription)
 	}
 
 	// Change to the specified directory
@@ -53,28 +53,47 @@ func run() error {
 		return fmt.Errorf("git working directory is not clean")
 	}
 
-	fullPath := filepath.Join(dir, filename)
-	originalContent, err := os.ReadFile(fullPath)
-	if err != nil {
-		return fmt.Errorf("error reading file: %w", err)
-	}
-
 	client, err := anthropic.New()
 	if err != nil {
 		return fmt.Errorf("error creating Anthropic client: %w", err)
 	}
 
 	ctx := context.Background()
-	improvedContent, err := improveProgram(ctx, client, string(originalContent), changeDescription)
+
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) != ".go" {
+			return nil
+		}
+
+		originalContent, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("error reading file %s: %w", path, err)
+		}
+
+		improvedContent, err := improveProgram(ctx, client, string(originalContent), changeDescription)
+		if err != nil {
+			return fmt.Errorf("error improving program %s: %w", path, err)
+		}
+
+		if err := os.WriteFile(path, []byte(improvedContent), 0644); err != nil {
+			return fmt.Errorf("error writing improved content to %s: %w", path, err)
+		}
+
+		fmt.Printf("Improved %s successfully!\n", path)
+		return nil
+	})
+
 	if err != nil {
-		return fmt.Errorf("error improving program: %w", err)
+		return fmt.Errorf("error processing files: %w", err)
 	}
 
-	if err := os.WriteFile(fullPath, []byte(improvedContent), 0644); err != nil {
-		return fmt.Errorf("error writing improved content: %w", err)
-	}
-
-	fmt.Println("Program improved successfully!")
+	fmt.Println("All programs in the directory improved successfully!")
 	return nil
 }
 
