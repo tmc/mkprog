@@ -196,7 +196,6 @@ func getCurrentState(dir string) (map[string]string, error) {
 }
 
 func getSourceFiles(dir string) ([]string, error) {
-
 	var files []string
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -228,29 +227,30 @@ func parseChanges(content string) (map[string]string, error) {
 
 	lines := strings.Split(content, "\n")
 	var currentFile string
-	var currentContent string
+	var currentContent strings.Builder
 	for _, line := range lines {
-		if strings.HasPrefix(line, "=== ") {
+		if strings.HasPrefix(line, "=== ") && strings.HasSuffix(line, " ===") {
 			if currentFile != "" {
-				changes[currentFile] = currentContent
+				changes[currentFile] = currentContent.String()
+				currentContent.Reset()
 			}
-			currentFile = strings.TrimPrefix(line, "=== ")
-
-			currentContent = ""
+			currentFile = strings.TrimPrefix(strings.TrimSuffix(line, " ==="), "=== ")
 		} else {
-			currentContent += line + "\n"
+			currentContent.WriteString(line)
+			currentContent.WriteString("\n")
 		}
 	}
 	if currentFile != "" {
-		changes[currentFile] = currentContent
+		changes[currentFile] = currentContent.String()
 	}
 	return changes, nil
 }
 
 func applyChanges(dir string, changes map[string]string) error {
 	for file, content := range changes {
-		if err := ioutil.WriteFile(file, []byte(content), 0644); err != nil {
-			return fmt.Errorf("failed to write file %s: %w", file, err)
+		fullPath := filepath.Join(dir, file)
+		if err := ioutil.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write file %s: %w", fullPath, err)
 		}
 	}
 	return nil
@@ -266,8 +266,9 @@ func gitCheckout(dir string) error {
 
 func revertToState(dir string, state map[string]string) error {
 	for file, content := range state {
-		if err := ioutil.WriteFile(file, []byte(content), 0644); err != nil {
-			return fmt.Errorf("failed to write file %s: %w", file, err)
+		fullPath := filepath.Join(dir, file)
+		if err := ioutil.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write file %s: %w", fullPath, err)
 		}
 	}
 	return nil

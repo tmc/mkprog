@@ -20,6 +20,7 @@ var systemPrompt string
 
 var verbose bool
 var dir string
+var dryRun bool
 
 func main() {
 	if err := run(); err != nil {
@@ -31,17 +32,18 @@ func main() {
 func run() error {
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose output")
 	flag.StringVar(&dir, "dir", ".", "Directory to operate in")
+	flag.BoolVar(&dryRun, "dry-run", false, "Perform a dry run without making changes")
 	flag.Parse()
 
 	args := flag.Args()
 	if len(args) < 1 {
-		return fmt.Errorf("usage: %s [-verbose] [-dir <directory>] <change description>", os.Args[0])
+		return fmt.Errorf("usage: %s [-verbose] [-dir <directory>] [-dry-run] <change description>", os.Args[0])
 	}
 
 	changeDescription := strings.Join(args, " ")
 
 	if verbose {
-		fmt.Printf("Directory: %s\nChange description: %s\n", dir, changeDescription)
+		fmt.Printf("Directory: %s\nChange description: %s\nDry run: %v\n", dir, changeDescription, dryRun)
 	}
 
 	// Change to the specified directory
@@ -81,11 +83,14 @@ func run() error {
 			return fmt.Errorf("error improving program %s: %w", path, err)
 		}
 
-		if err := os.WriteFile(path, []byte(improvedContent), 0644); err != nil {
-			return fmt.Errorf("error writing improved content to %s: %w", path, err)
+		if dryRun {
+			fmt.Printf("Dry run: Would improve %s\n", path)
+		} else {
+			if err := os.WriteFile(path, []byte(improvedContent), 0644); err != nil {
+				return fmt.Errorf("error writing improved content to %s: %w", path, err)
+			}
+			fmt.Printf("Improved %s successfully!\n", path)
 		}
-
-		fmt.Printf("Improved %s successfully!\n", path)
 		return nil
 	})
 
@@ -93,7 +98,11 @@ func run() error {
 		return fmt.Errorf("error processing files: %w", err)
 	}
 
-	fmt.Println("All programs in the directory improved successfully!")
+	if dryRun {
+		fmt.Println("Dry run completed. No changes were made.")
+	} else {
+		fmt.Println("All programs in the directory improved successfully!")
+	}
 	return nil
 }
 
