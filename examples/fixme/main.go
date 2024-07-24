@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,28 +55,52 @@ func run() error {
 		commandArgs = args[1:]
 	}
 
-	output, err := runCommand(command, commandArgs...)
-	if err == nil {
-		// If the command succeeds (exits 0), do nothing and exit
-		return nil
-	}
-
-	fmt.Printf("Command failed. Error: %v\nOutput: %s\n", err, output)
-
-	// If there's an error, suggest an improveprog or fixprog invocation
 	llm, err := openai.New()
 	if err != nil {
 		return fmt.Errorf("failed to create OpenAI client: %w", err)
 	}
 
-	suggestion, err := getSuggestion(llm, command, commandArgs, err.Error(), output, description)
-	if err != nil {
-		return fmt.Errorf("failed to get suggestion: %w", err)
-	}
+	fixHistory := []string{}
 
-	fmt.Println("Suggested command:")
-	fmt.Println(suggestion)
-	return nil
+	for {
+		output, err := runCommand(command, commandArgs...)
+		if err == nil {
+			// If the command succeeds (exits 0), exit the loop
+			return nil
+		}
+
+		fmt.Printf("Command failed. Error: %v\nOutput: %s\n", err, output)
+
+		suggestion, err := getSuggestion(llm, command, commandArgs, err.Error(), output, description, fixHistory)
+		if err != nil {
+			return fmt.Errorf("failed to get suggestion: %w", err)
+		}
+
+		fmt.Println("Suggested command:")
+		fmt.Println(suggestion)
+
+		// Add the suggestion to the fix history
+		fixHistory = append(fixHistory, suggestion)
+
+		// Ask the user if they want to continue
+		fmt.Print("Do you want to apply this suggestion? (y/n): ")
+		var response string
+		fmt.Scanln(&response)
+
+		if strings.ToLower(response) != "y" {
+			return nil
+		}
+
+		// Parse the suggestion and update the command and arguments
+		suggestedArgs := strings.Fields(suggestion)
+		if len(suggestedArgs) > 1 && suggestedArgs[0] == "fixprog" {
+			command = suggestedArgs[1]
+			commandArgs = suggestedArgs[2:]
+		} else {
+			fmt.Println("Invalid suggestion format. Exiting.")
+			return nil
+		}
+	}
 }
 
 func runCommand(name string, args ...string) (string, error) {
@@ -84,19 +109,25 @@ func runCommand(name string, args ...string) (string, error) {
 	return string(output), err
 }
 
-func getSuggestion(llm llms.LLM, command string, args []string, errMsg, output, description string) (string, error) {
-	context := fmt.Sprintf("Command: %s %s\nError: %s\nOutput: %s\nDescription: %s",
+func getSuggestion(llm llms.LLM, command string, args []string, errMsg, output, description string, fixHistory []string) (string, error) {
+	ctx := fmt.Sprintf("Command: %s %s\nError: %s\nOutput: %s\nDescription: %s",
 		command, strings.Join(args, " "), errMsg, output, description)
+
+	historyContext := strings.Join(fixHistory, "\n")
 
 	prompt := fmt.Sprintf(`Given the following context of a failed command execution:
 
 %s
 
-Suggest an appropriate 'improveprog' or 'fixprog' invocation to address the issue.
-If a description is provided, use it to guide your suggestion.
-Provide only the suggested command without any additional explanation.`, context)
+Fix history:
+%s
 
-	response, err := llm.Call(prompt)
+Suggest an appropriate 'fixprog' invocation to address the issue.
+If a description is provided, use it to guide your suggestion.
+Include the -hist flag with smart fixme instructions based on the fix history.
+Provide only the suggested command without any additional explanation.`, ctx, historyContext)
+
+	response, err := llm.Call(context.Background(), prompt)
 	if err != nil {
 		return "", fmt.Errorf("AI request failed: %w", err)
 	}
