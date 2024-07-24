@@ -73,7 +73,7 @@ func improveProgram(ctx context.Context, client *anthropic.LLM, originalContent,
 }
 
 func isGitClean() bool {
-	cmd := exec.Command("git", "status", "--porcelain", ".")
+	cmd := exec.Command("git", "status", "--porcelain", "--untracked-files=no", ".")
 	output, err := cmd.Output()
 	if err != nil {
 		return false
