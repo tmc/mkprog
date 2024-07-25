@@ -7,6 +7,13 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
+)
+
+var (
+	verbose bool
+	keep    bool
 )
 
 func main() {
@@ -17,52 +24,68 @@ func main() {
 }
 
 func run() error {
-	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: try <command>")
+	rootCmd := &cobra.Command{
+		Use:   "try <command>",
+		Short: "Safely experiment with changes in a Git repository",
+		Long: `try allows developers to safely experiment with changes in a Git repository.
+It creates a temporary branch, executes the given command, commits the changes,
+and optionally deletes the temporary branch.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return fmt.Errorf("command is required")
+			}
+			return tryCommand(args)
+		},
 	}
 
-	command := strings.Join(os.Args[1:], " ")
+	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Provide more detailed output")
+	rootCmd.Flags().BoolVarP(&keep, "keep", "k", false, "Keep the temporary branch instead of deleting it")
+
+	return rootCmd.Execute()
+}
+
+func tryCommand(args []string) error {
 	originalBranch, err := getCurrentBranch()
 	if err != nil {
 		return fmt.Errorf("failed to get current branch: %w", err)
 	}
 
-	newBranch := fmt.Sprintf("try-%d", time.Now().Unix())
-	if err := createAndCheckoutBranch(newBranch); err != nil {
-		return fmt.Errorf("failed to create and checkout new branch: %w", err)
+	tempBranch := fmt.Sprintf("try-%d", time.Now().Unix())
+
+	if err := createAndCheckoutBranch(tempBranch); err != nil {
+		return fmt.Errorf("failed to create and checkout temporary branch: %w", err)
 	}
 
 	defer func() {
 		if err := checkoutBranch(originalBranch); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to switch back to original branch: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Failed to checkout original branch: %v\n", err)
 		}
-		if err := deleteBranch(newBranch); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to delete temporary branch: %v\n", err)
+		if !keep {
+			if err := deleteBranch(tempBranch); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to delete temporary branch: %v\n", err)
+			}
 		}
 	}()
 
-	output, exitStatus, err := executeCommand(command)
+	output, exitStatus, err := executeCommand(args)
 	if err != nil {
 		return fmt.Errorf("failed to execute command: %w", err)
 	}
 
-	fmt.Print(output)
+	if err := commitChanges(strings.Join(args, " "), output, exitStatus); err != nil {
+		return fmt.Errorf("failed to commit changes: %w", err)
+	}
 
-	commitMsg := fmt.Sprintf("Try: %s", command)
-	commitHash, err := createCommit(commitMsg)
+	commitHash, err := getLastCommitHash()
 	if err != nil {
-		return fmt.Errorf("failed to create commit: %w", err)
+		return fmt.Errorf("failed to get last commit hash: %w", err)
 	}
 
-	noteContent := fmt.Sprintf("Command: %s\nExit Status: %d\nOutput:\n%s", command, exitStatus, output)
-	if err := addGitNote(commitHash, noteContent); err != nil {
-		return fmt.Errorf("failed to add git note: %w", err)
+	fmt.Println(output)
+	fmt.Printf("\nCommand executed and results stored in commit %s\n", commitHash)
+	if keep {
+		fmt.Printf("Temporary branch '%s' has been kept\n", tempBranch)
 	}
-
-	fmt.Printf("\nOperation summary:\n")
-	fmt.Printf("Command: %s\n", command)
-	fmt.Printf("Exit Status: %d\n", exitStatus)
-	fmt.Printf("Result stored in commit: %s\n", commitHash)
 
 	return nil
 }
@@ -78,54 +101,67 @@ func getCurrentBranch() (string, error) {
 
 func createAndCheckoutBranch(branch string) error {
 	cmd := exec.Command("git", "checkout", "-b", branch)
+	if verbose {
+		fmt.Printf("Creating and checking out branch: %s\n", branch)
+	}
 	return cmd.Run()
 }
 
 func checkoutBranch(branch string) error {
 	cmd := exec.Command("git", "checkout", branch)
+	if verbose {
+		fmt.Printf("Checking out branch: %s\n", branch)
+	}
 	return cmd.Run()
 }
 
 func deleteBranch(branch string) error {
 	cmd := exec.Command("git", "branch", "-D", branch)
+	if verbose {
+		fmt.Printf("Deleting branch: %s\n", branch)
+	}
 	return cmd.Run()
 }
 
-func executeCommand(command string) (string, int, error) {
-	cmd := exec.Command("sh", "-c", command)
+func executeCommand(args []string) (string, int, error) {
+	cmd := exec.Command(args[0], args[1:]...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
 
-	output := stdout.String() + stderr.String()
+	err := cmd.Run()
 	exitStatus := 0
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
 			exitStatus = exitError.ExitCode()
 		} else {
-			return output, -1, err
+			return "", 0, err
 		}
 	}
 
+	output := stdout.String() + stderr.String()
 	return output, exitStatus, nil
 }
 
-func createCommit(message string) (string, error) {
-	cmd := exec.Command("git", "commit", "--allow-empty", "-m", message)
-	if err := cmd.Run(); err != nil {
-		return "", err
+func commitChanges(command, output string, exitStatus int) error {
+	if err := exec.Command("git", "add", ".").Run(); err != nil {
+		return err
 	}
 
-	cmd = exec.Command("git", "rev-parse", "HEAD")
+	commitMsg := fmt.Sprintf("Try: %s", command)
+	if err := exec.Command("git", "commit", "-m", commitMsg).Run(); err != nil {
+		return err
+	}
+
+	note := fmt.Sprintf("Command: %s\nExit Status: %d\nOutput:\n%s", command, exitStatus, output)
+	return exec.Command("git", "notes", "add", "-m", note).Run()
+}
+
+func getLastCommitHash() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(string(output)), nil
-}
-
-func addGitNote(commitHash, content string) error {
-	cmd := exec.Command("git", "notes", "add", "-m", content, commitHash)
-	return cmd.Run()
 }
