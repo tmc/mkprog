@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/anthropic"
@@ -21,6 +22,7 @@ var systemPrompt string
 var verbose bool
 var dir string
 var dryRun bool
+var concurrency int
 
 func main() {
 	if err := run(); err != nil {
@@ -33,17 +35,18 @@ func run() error {
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose output")
 	flag.StringVar(&dir, "dir", ".", "Directory to operate in")
 	flag.BoolVar(&dryRun, "dry-run", false, "Perform a dry run without making changes")
+	flag.IntVar(&concurrency, "concurrency", 5, "Number of concurrent file processing")
 	flag.Parse()
 
 	args := flag.Args()
 	if len(args) < 1 {
-		return fmt.Errorf("usage: %s [-verbose] [-dir <directory>] [-dry-run] <change description>", os.Args[0])
+		return fmt.Errorf("usage: %s [-verbose] [-dir <directory>] [-dry-run] [-concurrency <num>] <change description>", os.Args[0])
 	}
 
 	changeDescription := strings.Join(args, " ")
 
 	if verbose {
-		fmt.Printf("Directory: %s\nChange description: %s\nDry run: %v\n", dir, changeDescription, dryRun)
+		fmt.Printf("Directory: %s\nChange description: %s\nDry run: %v\nConcurrency: %d\n", dir, changeDescription, dryRun, concurrency)
 	}
 
 	// Change to the specified directory
@@ -62,6 +65,10 @@ func run() error {
 
 	ctx := context.Background()
 
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, concurrency)
+	errChan := make(chan error, 1)
+
 	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -73,39 +80,64 @@ func run() error {
 			return nil
 		}
 
-		originalContent, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("error reading file %s: %w", path, err)
-		}
+		wg.Add(1)
+		go func(path string) {
+			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
 
-		improvedContent, reasoning, err := improveProgram(ctx, client, string(originalContent), changeDescription)
-		if err != nil {
-			return fmt.Errorf("error improving program %s: %w", path, err)
-		}
-
-		if verbose {
-			fmt.Printf("Reasoning for %s:\n%s\n", path, reasoning)
-		}
-
-		if dryRun {
-			fmt.Printf("Dry run: Would improve %s\n", path)
-		} else {
-			if err := os.WriteFile(path, []byte(improvedContent), 0644); err != nil {
-				return fmt.Errorf("error writing improved content to %s: %w", path, err)
+			if err := processFile(ctx, client, path, changeDescription); err != nil {
+				select {
+				case errChan <- fmt.Errorf("error processing file %s: %w", path, err):
+				default:
+				}
 			}
-			fmt.Printf("Improved %s successfully!\n", path)
-		}
+		}(path)
+
 		return nil
 	})
 
 	if err != nil {
-		return fmt.Errorf("error processing files: %w", err)
+		return fmt.Errorf("error walking directory: %w", err)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	if err, ok := <-errChan; ok {
+		return err
 	}
 
 	if dryRun {
 		fmt.Println("Dry run completed. No changes were made.")
 	} else {
 		fmt.Println("All programs in the directory improved successfully!")
+	}
+	return nil
+}
+
+func processFile(ctx context.Context, client *anthropic.LLM, path, changeDescription string) error {
+	originalContent, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("error reading file %s: %w", path, err)
+	}
+
+	improvedContent, reasoning, err := improveProgram(ctx, client, string(originalContent), changeDescription)
+	if err != nil {
+		return fmt.Errorf("error improving program %s: %w", path, err)
+	}
+
+	if verbose {
+		fmt.Printf("Reasoning for %s:\n%s\n", path, reasoning)
+	}
+
+	if dryRun {
+		fmt.Printf("Dry run: Would improve %s\n", path)
+	} else {
+		if err := os.WriteFile(path, []byte(improvedContent), 0644); err != nil {
+			return fmt.Errorf("error writing improved content to %s: %w", path, err)
+		}
+		fmt.Printf("Improved %s successfully!\n", path)
 	}
 	return nil
 }
