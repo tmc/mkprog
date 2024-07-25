@@ -1,16 +1,20 @@
-# Better-mkprog
+# Better MkProg
 
-Better-mkprog is an improved version of the original mkprog program. It generates multiple versions of a program based on a given name and description, runs tests on each version, and selects the best-performing one.
+Better MkProg is an improved version of the original mkprog program. It generates Go programs based on user input, runs multiple iterations of tests, and provides analysis of the results.
 
 ## Features
 
-- Generates multiple program versions
-- Runs predefined tests on each version
-- Assigns scores based on test results
-- Selects the best-performing version
-- Provides analysis of test results using AI
-- Supports concurrent processing
-- Allows custom test definitions via a configuration file
+- Generates Go programs based on user-provided name and description
+- Runs multiple iterations of program generation and testing
+- Compiles and tests each generated program
+- Saves test results as Git notes
+- Assigns scores to generated programs based on test results
+- Compares scores of all generated versions
+- Presents the best-performing version to the user
+- Provides a summary of all versions and their scores
+- Uses concurrent processing for running iterations
+- Offers a verbose output option for detailed logging
+- Analyzes test results using AI to provide insights
 
 ## Installation
 
@@ -25,56 +29,26 @@ Better-mkprog is an improved version of the original mkprog program. It generate
    ```
 4. Build the program:
    ```
-   go build
+   go build -o better-mkprog
    ```
 
 ## Usage
 
-Run better-mkprog with the following command-line arguments:
+Run the program with the following command-line arguments:
 
 ```
-./better-mkprog -name <program-name> -desc "<program-description>" [-n <iterations>] [-v] [-config <config-file>]
+./better-mkprog -name <program-name> -desc "<program-description>" [-n <iterations>] [-v]
 ```
 
 - `-name`: Name of the program to generate (required)
 - `-desc`: Description of the program to generate (required)
 - `-n`: Number of iterations to run tests (default: 5)
 - `-v`: Enable verbose output
-- `-config`: Path to the configuration file (default: config.json)
 
 Example:
 
 ```
-./better-mkprog -name myprogram -desc "A program that sorts numbers" -n 10 -v
-```
-
-## Configuration
-
-You can customize the tests run on each program version by modifying the `config.json` file. The file should contain a JSON object with a "tests" array, where each test has a name and a command to run.
-
-Example `config.json`:
-
-```json
-{
-  "tests": [
-    {
-      "name": "Compilation",
-      "command": "go build -o testprogram testprogram.go"
-    },
-    {
-      "name": "Basic Functionality",
-      "command": "./testprogram --test basic"
-    },
-    {
-      "name": "Edge Cases",
-      "command": "./testprogram --test edge"
-    },
-    {
-      "name": "Performance",
-      "command": "time ./testprogram --test performance"
-    }
-  ]
-}
+./better-mkprog -name my-awesome-program -desc "A program that does amazing things" -n 10 -v
 ```
 
 ## License

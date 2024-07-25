@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -65,6 +66,11 @@ func run() error {
 
 	if err := fw.close(); err != nil {
 		return fmt.Errorf("failed to close last file: %w", err)
+	}
+
+	// run goimports if it's available (lookpath)
+	if err := runGoImports(outputDir); err != nil {
+		return fmt.Errorf("failed to run goimports: %w", err)
 	}
 
 	fmt.Printf("Program generation complete. Output directory: %s\n", outputDir)
@@ -134,4 +140,17 @@ func (fw *fileWriter) close() error {
 		fw.buffer.Reset()
 	}
 	return nil
+}
+
+func runGoImports(dir string) error {
+	_, err := exec.LookPath("goimports")
+	if err != nil {
+		fmt.Println("goimports not found, skipping...")
+		return nil
+	}
+	fmt.Println("Running goimports...")
+	cmd := exec.Command("goimports", "-w", dir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
