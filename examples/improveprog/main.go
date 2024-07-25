@@ -78,9 +78,13 @@ func run() error {
 			return fmt.Errorf("error reading file %s: %w", path, err)
 		}
 
-		improvedContent, err := improveProgram(ctx, client, string(originalContent), changeDescription)
+		improvedContent, reasoning, err := improveProgram(ctx, client, string(originalContent), changeDescription)
 		if err != nil {
 			return fmt.Errorf("error improving program %s: %w", path, err)
+		}
+
+		if verbose {
+			fmt.Printf("Reasoning for %s:\n%s\n", path, reasoning)
 		}
 
 		if dryRun {
@@ -106,10 +110,10 @@ func run() error {
 	return nil
 }
 
-func improveProgram(ctx context.Context, client *anthropic.LLM, originalContent, changeDescription string) (string, error) {
+func improveProgram(ctx context.Context, client *anthropic.LLM, originalContent, changeDescription string) (string, string, error) {
 	messages := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
-		llms.TextParts(llms.ChatMessageTypeHuman, fmt.Sprintf("Original program:\n\n%s\n\nChange description: %s", originalContent, changeDescription)),
+		llms.TextParts(llms.ChatMessageTypeHuman, fmt.Sprintf("Original program:\n\n%s\n\nChange description: %s\n\nPlease use <anthinking> tags to show your reasoning process.", originalContent, changeDescription)),
 	}
 
 	if verbose {
@@ -118,14 +122,29 @@ func improveProgram(ctx context.Context, client *anthropic.LLM, originalContent,
 
 	resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(0.1), llms.WithMaxTokens(4000))
 	if err != nil {
-		return "", fmt.Errorf("failed to generate content: %w", err)
+		return "", "", fmt.Errorf("failed to generate content: %w", err)
 	}
 
 	if verbose {
 		fmt.Println("Received response from Anthropic API")
 	}
 
-	return resp.Choices[0].Content, nil
+	content := resp.Choices[0].Content
+	improvedProgram, reasoning := extractProgramAndReasoning(content)
+
+	return improvedProgram, reasoning, nil
+}
+
+func extractProgramAndReasoning(content string) (string, string) {
+	parts := strings.Split(content, "<anthinking>")
+	if len(parts) < 2 {
+		return content, ""
+	}
+
+	program := strings.TrimSpace(parts[0])
+	reasoning := strings.TrimSpace(strings.TrimSuffix(parts[1], "</anthinking>"))
+
+	return program, reasoning
 }
 
 func isGitClean() bool {

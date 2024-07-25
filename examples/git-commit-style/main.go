@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/anthropic"
 )
@@ -31,12 +30,7 @@ func run() error {
 		return fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
-	repo, err := git.PlainOpen(repoPath)
-	if err != nil {
-		return fmt.Errorf("failed to open git repository: %w", err)
-	}
-
-	commits, err := getCommitHistory(repo)
+	commits, err := getCommitHistory(repoPath)
 	if err != nil {
 		return fmt.Errorf("failed to get commit history: %w", err)
 	}
@@ -55,27 +49,14 @@ func run() error {
 	return nil
 }
 
-func getCommitHistory(repo *git.Repository) ([]*object.Commit, error) {
-	ref, err := repo.Head()
+func getCommitHistory(repoPath string) (string, error) {
+	cmd := exec.Command("git", "log", "--pretty=format:Commit: %H%nAuthor: %an%nDate: %ad%nMessage: %s%n%n")
+	cmd.Dir = repoPath
+	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get HEAD reference: %w", err)
+		return "", fmt.Errorf("failed to get commit history: %w", err)
 	}
-
-	commitIter, err := repo.Log(&git.LogOptions{From: ref.Hash()})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get commit iterator: %w", err)
-	}
-
-	var commits []*object.Commit
-	err = commitIter.ForEach(func(c *object.Commit) error {
-		commits = append(commits, c)
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to iterate over commits: %w", err)
-	}
-
-	return commits, nil
+	return string(output), nil
 }
 
 func findContextFiles(startPath string) ([]string, error) {
@@ -101,17 +82,11 @@ func findContextFiles(startPath string) ([]string, error) {
 	return contextFiles, nil
 }
 
-func generateGuidance(commits []*object.Commit, contextFiles []string) (string, error) {
+func generateGuidance(commits string, contextFiles []string) (string, error) {
 	ctx := context.Background()
 	client, err := anthropic.New()
 	if err != nil {
 		return "", fmt.Errorf("failed to create Anthropic client: %w", err)
-	}
-
-	var commitInfo strings.Builder
-	for _, commit := range commits {
-		commitInfo.WriteString(fmt.Sprintf("Commit: %s\nAuthor: %s\nDate: %s\nMessage: %s\n\n",
-			commit.Hash, commit.Author.Name, commit.Author.When, commit.Message))
 	}
 
 	var contextContent strings.Builder
@@ -123,7 +98,7 @@ func generateGuidance(commits []*object.Commit, contextFiles []string) (string, 
 		contextContent.WriteString(fmt.Sprintf("File: %s\nContent:\n%s\n\n", file, string(content)))
 	}
 
-	userInput := fmt.Sprintf("Commit history:\n%s\nContext files:\n%s\nPlease provide guidance for this repository based on the commit history and context files.", commitInfo.String(), contextContent.String())
+	userInput := fmt.Sprintf("Commit history:\n%s\nContext files:\n%s\nPlease provide guidance for this repository based on the commit history and context files.", commits, contextContent.String())
 
 	messages := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
@@ -137,4 +112,3 @@ func generateGuidance(commits []*object.Commit, contextFiles []string) (string, 
 
 	return resp.Choices[0].Content, nil
 }
-

@@ -99,9 +99,9 @@ func run() error {
 
 		// Parse the suggestion and update the command and arguments
 		suggestedArgs := strings.Fields(suggestion)
-		if len(suggestedArgs) > 1 && suggestedArgs[0] == "fixprog" {
-			command = suggestedArgs[1]
-			commandArgs = suggestedArgs[2:]
+		if len(suggestedArgs) > 0 {
+			command = suggestedArgs[0]
+			commandArgs = suggestedArgs[1:]
 		} else {
 			fmt.Println("Invalid suggestion format. Exiting.")
 			return nil
@@ -128,11 +128,9 @@ func getSuggestion(llm llms.LLM, command string, args []string, errMsg, output, 
 Fix history:
 %s
 
-Suggest an appropriate 'fixprog' invocation to address the issue.
+Suggest an appropriate command to address the issue.
 If a description is provided, use it to guide your suggestion.
-Include the -hist bool flag.
-Include the -desc flag with a brief description of the fix.
-Provide the suggested command on the first line and the fix description on the second line.`, ctx, historyContext)
+Provide the suggested command on the first line and a brief description of the fix on the second line.`, ctx, historyContext)
 
 	response, err := llm.Call(context.Background(), prompt)
 	if err != nil {

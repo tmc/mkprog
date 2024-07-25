@@ -23,9 +23,11 @@ func run() error {
 
 	goals, err := readFile("goals")
 	if err != nil {
-		return fmt.Errorf("failed to read goals: %w", err)
+		fmt.Println("⚠️  No goals file found. Proceeding with an empty goals list.")
+		goals = []string{}
+	} else {
+		fmt.Println("📋 Goals loaded successfully!")
 	}
-	fmt.Println("📋 Goals loaded successfully!")
 
 	tools, err := listTools(".")
 	if err != nil {
@@ -35,30 +37,37 @@ func run() error {
 
 	history, err := readFile("hist")
 	if err != nil {
-		return fmt.Errorf("failed to read history: %w", err)
+		fmt.Println("⚠️  No history file found. Proceeding with an empty history.")
+		history = []string{}
+	} else {
+		fmt.Println("📜 Development history retrieved")
 	}
-	fmt.Println("📜 Development history retrieved")
 
 	todos, err := readFile("todos")
 	if err != nil {
-		return fmt.Errorf("failed to read todos: %w", err)
+		fmt.Println("⚠️  No todos file found. Proceeding with an empty todo list.")
+		todos = []string{}
+	} else {
+		fmt.Printf("📝 Loaded %d todo items\n", len(todos))
 	}
-	fmt.Printf("📝 Loaded %d todo items\n", len(todos))
 
-	fmt.Println("🤔 Analyzing project context and planning next action...")
-	action, err := planNextAction(goals, tools, history, todos)
+	fmt.Println("🤔 Analyzing project context and planning action graph...")
+	actionGraph, err := planActionGraph(goals, tools, history, todos)
 	if err != nil {
-		return fmt.Errorf("failed to plan next action: %w", err)
+		return fmt.Errorf("failed to plan action graph: %w", err)
 	}
 
-	fmt.Println("✨ AI Assistant suggests the following next action:")
-	fmt.Printf("👉 %s\n", action)
+	fmt.Println("✨ AI Assistant suggests the following action graph:")
+	fmt.Printf("%s\n", actionGraph)
 	return nil
 }
 
 func readFile(filename string) ([]string, error) {
 	content, err := findAndReadFile(filename)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("file not found: %s", filename)
+		}
 		return nil, fmt.Errorf("error reading %s: %w", filename, err)
 	}
 	return strings.Split(content, "\n"), nil
@@ -77,6 +86,10 @@ func findAndReadFile(filename string) (string, error) {
 		if err == nil {
 			fmt.Printf("📂 Found %s in %s\n", filename, dir)
 			return string(content), nil
+		}
+
+		if !os.IsNotExist(err) {
+			return "", err
 		}
 
 		parent := filepath.Dir(dir)
@@ -111,7 +124,7 @@ func isExecutable(entry os.DirEntry) bool {
 	return info.Mode()&0111 != 0 || strings.HasSuffix(entry.Name(), "prog") || entry.Name() == "plan"
 }
 
-func planNextAction(goals, tools, history, todos []string) (string, error) {
+func planActionGraph(goals, tools, history, todos []string) (string, error) {
 	ctx := context.Background()
 	fmt.Println("🤖 Connecting to AI assistant...")
 	client, err := anthropic.New()
@@ -119,7 +132,7 @@ func planNextAction(goals, tools, history, todos []string) (string, error) {
 		return "", fmt.Errorf("failed to create Anthropic client: %w", err)
 	}
 
-	prompt := fmt.Sprintf(`Based on the following information, suggest the next action to take in the development process:
+	prompt := fmt.Sprintf(`Based on the following information, create a graph of actions to take in the development process:
 
 Goals:
 %s
@@ -133,15 +146,22 @@ Recent history:
 Current todos:
 %s
 
-Provide a single, specific command to run or action to take as the next step. Be concise and direct.`, goals, tools, history, todos)
+Provide a graph of actions, showing dependencies and relationships between tasks. Each node should represent a specific action or task, and edges should show the order or dependencies between actions. Use a simple text-based format to represent the graph, such as:
+
+Action1 -> Action2
+Action1 -> Action3
+Action2 -> Action4
+Action3 -> Action4
+
+Be comprehensive but concise, focusing on the most important actions to achieve the goals.`, strings.Join(goals, "\n"), strings.Join(tools, "\n"), strings.Join(history, "\n"), strings.Join(todos, "\n"))
 
 	messages := []llms.MessageContent{
-		llms.TextParts(llms.ChatMessageTypeSystem, "You are an AI assistant helping to plan the next action in a software development project. Suggest the most appropriate next step based on the provided context."),
+		llms.TextParts(llms.ChatMessageTypeSystem, "You are an AI assistant helping to plan a graph of actions for a software development project. Create a comprehensive action plan based on the provided context."),
 		llms.TextParts(llms.ChatMessageTypeHuman, prompt),
 	}
 
 	fmt.Println("💭 AI assistant is thinking...")
-	resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(0.2), llms.WithMaxTokens(100))
+	resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(0.2), llms.WithMaxTokens(500))
 	if err != nil {
 		return "", fmt.Errorf("failed to generate content: %w", err)
 	}
