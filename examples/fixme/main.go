@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/tmc/langchaingo/llms"
@@ -131,6 +133,11 @@ func getSuggestion(llm llms.LLM, command string, args []string, errMsg, output, 
 
 	historyContext := strings.Join(fixHistory, "\n")
 
+	sourceContext, err := getSourceContext()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get source context: %w", err)
+	}
+
 	prompt := fmt.Sprintf(`%s
 
 fixme is a general-purpose tool that suggests fixes for failed shell commands, with a focus on Go module issues. Here's the command being run and its output:
@@ -140,13 +147,16 @@ fixme is a general-purpose tool that suggests fixes for failed shell commands, w
 Fix history:
 %s
 
+Source context:
+%s
+
 Please suggest a fix for this command, considering the following:
 1. The package structure or version might have changed in newer releases.
 2. Consider suggesting alternative versions or package paths.
 3. Avoid repeating previously failed suggestions.
 4. If dealing with Go modules, consider using 'go mod tidy' or 'go get' with specific versions.
 
-Provide the suggested command on the first line and a brief description of the fix on subsequent lines.`, systemPrompt, ctx, historyContext)
+Provide the suggested command on the first line and a brief description of the fix on subsequent lines.`, systemPrompt, ctx, historyContext, sourceContext)
 
 	response, err := llm.Call(context.Background(), prompt)
 	if err != nil {
@@ -166,4 +176,28 @@ Provide the suggested command on the first line and a brief description of the f
 	}
 
 	return suggestion, fixDescription, nil
+}
+
+func getSourceContext() (string, error) {
+	var context strings.Builder
+
+	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && (strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "go.mod") || strings.HasSuffix(path, "go.sum")) {
+			content, err := ioutil.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			context.WriteString(fmt.Sprintf("=== %s ===\n%s\n\n", path, string(content)))
+		}
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	return context.String(), nil
 }
