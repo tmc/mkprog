@@ -121,16 +121,16 @@ func getSuggestion(llm llms.LLM, command string, args []string, errMsg, output, 
 
 	historyContext := strings.Join(fixHistory, "\n")
 
-	prompt := fmt.Sprintf(`Given the following context of a failed command execution:
+	prompt := fmt.Sprintf(`fixme is a general-purpose tool that suggests fixes for failed shell commands. Here's the command being run and its output:
 
 %s
 
 Fix history:
 %s
 
-Suggest an appropriate command to address the issue.
-If a description is provided, use it to guide your suggestion.
-Provide the suggested command on the first line and a brief description of the fix on the second line.`, ctx, historyContext)
+Please suggest a fix for this command, explaining your reasoning. The suggestion should be in the format of a shell command that can be directly executed.
+
+Provide the suggested command on the first line and a brief description of the fix on subsequent lines.`, ctx, historyContext)
 
 	response, err := llm.Call(context.Background(), prompt)
 	if err != nil {
@@ -141,8 +141,9 @@ Provide the suggested command on the first line and a brief description of the f
 	lines := strings.Split(strings.TrimSpace(response), "\n")
 	suggestion := lines[0]
 	fixDescription := ""
+
 	if len(lines) > 1 {
-		fixDescription = lines[1]
+		fixDescription = strings.Join(lines[1:], "\n")
 	}
 
 	return suggestion, fixDescription, nil
