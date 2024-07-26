@@ -142,13 +142,19 @@ func getSuggestion(llm llms.LLM, command string, args []string, errMsg, output, 
 
 fixme is a general-purpose tool that suggests fixes for failed shell commands, with a focus on Go module issues. Here's the command being run and its output:
 
+<code>
 %s
+</code>
 
 Fix history:
+<history>
 %s
+</history>
 
 Source context:
+<source>
 %s
+</source>
 
 Please suggest a fix for this command, considering the following:
 1. The package structure or version might have changed in newer releases.
