@@ -13,6 +13,18 @@ Guidelines for generating commit messages:
 9. Group related changes together and separate unrelated changes into multiple commits if necessary.
 10. Be specific and avoid vague descriptions.
 
-Analyze the Git status and diff information provided to you, and generate an appropriate commit message based on the changes. After generating the commit message, provide a brief explanation of your reasoning for choosing that particular message. This explanation should be separated from the commit message by two newline characters.
+After generating the commit message, provide a brief explanation of your reasoning for choosing that particular message. This explanation should be separated from the commit message by two newline characters.
 
-Remember to tailor the commit message to the specific changes made in the repository, focusing on the most important modifications and their impact on the project
+Example output format:
+
+Add user authentication feature
+
+Implement basic user registration and login functionality
+- Create User model and database migration
+- Add registration and login forms
+- Implement session management
+- Update navigation to show login/logout options
+
+Fixes #45
+
+Reasoning: This commit message was chosen because it succinctly describes the main feature added (user authentication) in the subject line. The body provides more details about the specific components implemented, which gives other developers a clear understanding of the changes made. The message also references the issue number that this commit resolves.

@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,16 +20,31 @@ import (
 //go:embed system-prompt.txt
 var systemPrompt string
 
+//go:embed commit-prompt.txt
+var commitPrompt string
+
+//go:embed conventional-commit-prompt.txt
+var conventionalCommitPrompt string
+
+const (
+	defaultAuthorName  = "Auto Git Commit"
+	defaultAuthorEmail = "auto@example.com"
+	gitGuidelinesFile  = ".git-commit-guidelines"
+)
+
 var (
-	verbose bool
-	dryRun  bool
-	path    string
+	verbose            bool
+	dryRun             bool
+	path               string
+	conventionalCommit bool
 )
 
 func main() {
 	flag.BoolVar(&verbose, "verbose", false, "Show reasoning for commit message generation")
 	flag.BoolVar(&dryRun, "dry-run", false, "Generate commit message without actually committing")
 	flag.StringVar(&path, "path", "", "Optional path to focus on a subtree")
+	flag.BoolVar(&conventionalCommit, "conventional", false, "Use conventional commit format (not default)")
+
 	flag.Parse()
 
 	if err := run(); err != nil {
@@ -42,6 +58,10 @@ func run() error {
 	changes, err := getGitChanges()
 	if err != nil {
 		return fmt.Errorf("failed to get git changes: %w", err)
+	}
+
+	if strings.TrimSpace(changes) == "" {
+		return fmt.Errorf("no changes to commit")
 	}
 
 	// Generate commit message
@@ -90,8 +110,8 @@ func run() error {
 	commitOptions := &git.CommitOptions{
 		All: true,
 		Author: &object.Signature{
-			Name:  "Auto Git Commit",
-			Email: "auto@example.com",
+			Name:  defaultAuthorName,
+			Email: defaultAuthorEmail,
 		},
 	}
 
@@ -144,8 +164,19 @@ func generateCommitMessage(changes string) (string, string, error) {
 		return "", "", fmt.Errorf("failed to create Anthropic client: %w", err)
 	}
 
+	prompt := systemPrompt
+	if conventionalCommit {
+		prompt = conventionalCommitPrompt
+	}
+
+	// Read and inject .git-commit-guidelines if it exists
+	guidelines, err := readGitCommitGuidelines()
+	if err == nil && guidelines != "" {
+		prompt += "\n\nAdditional commit guidelines:\n" + guidelines
+	}
+
 	messages := []llms.MessageContent{
-		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
+		llms.TextParts(llms.ChatMessageTypeSystem, prompt),
 		llms.TextParts(llms.ChatMessageTypeHuman, fmt.Sprintf("Generate a commit message for the following changes:\n\n%s", changes)),
 	}
 
@@ -162,4 +193,26 @@ func generateCommitMessage(changes string) (string, string, error) {
 	}
 
 	return parts[0], parts[1], nil
+}
+
+func readGitCommitGuidelines() (string, error) {
+	// Find the git root directory
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to find git root: %w", err)
+	}
+	gitRoot := strings.TrimSpace(string(output))
+
+	// Read the .git-commit-guidelines file
+	guidelinesPath := filepath.Join(gitRoot, gitGuidelinesFile)
+	content, err := ioutil.ReadFile(guidelinesPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil // File doesn't exist, which is okay
+		}
+		return "", fmt.Errorf("failed to read %s: %w", gitGuidelinesFile, err)
+	}
+
+	return string(content), nil
 }
