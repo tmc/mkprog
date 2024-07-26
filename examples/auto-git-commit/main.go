@@ -1,12 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	_ "embed"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -38,15 +38,11 @@ func main() {
 }
 
 func run() error {
-	// Read git status and git show output from stdin
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
+	// Get git status and diff
+	changes, err := getGitChanges()
 	if err != nil {
-		return fmt.Errorf("failed to read input: %w", err)
+		return fmt.Errorf("failed to get git changes: %w", err)
 	}
-
-	// Analyze changes
-	changes := analyzeChanges(input)
 
 	// Generate commit message
 	commitMessage, reasoning, err := generateCommitMessage(changes)
@@ -67,7 +63,8 @@ func run() error {
 
 	// Prompt for confirmation
 	fmt.Print("Do you want to commit with this message? (y/n): ")
-	response, err := reader.ReadString('\n')
+	var response string
+	_, err = fmt.Scanln(&response)
 	if err != nil {
 		return fmt.Errorf("failed to read user input: %w", err)
 	}
@@ -119,8 +116,24 @@ func run() error {
 	return nil
 }
 
-func analyzeChanges(input string) string {
-	return input
+func getGitChanges() (string, error) {
+	// Get git status
+	statusCmd := exec.Command("git", "status", "--porcelain")
+	statusOutput, err := statusCmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get git status: %w", err)
+	}
+
+	// Get git diff
+	diffCmd := exec.Command("git", "diff", "--cached")
+	diffOutput, err := diffCmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get git diff: %w", err)
+	}
+
+	// Combine status and diff
+	changes := fmt.Sprintf("Git Status:\n%s\n\nGit Diff:\n%s", statusOutput, diffOutput)
+	return changes, nil
 }
 
 func generateCommitMessage(changes string) (string, string, error) {
@@ -143,7 +156,7 @@ func generateCommitMessage(changes string) (string, string, error) {
 
 	content := resp.Choices[0].Content
 	parts := strings.SplitN(content, "\n\n", 2)
-	
+
 	if len(parts) < 2 {
 		return content, "", nil
 	}
