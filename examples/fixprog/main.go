@@ -40,75 +40,60 @@ func run() error {
 		return fmt.Errorf("description is required")
 	}
 
-	if *verbose {
-		fmt.Printf("Starting operation on directory: %s\n", *dir)
-		fmt.Printf("Change description: %s\n", *description)
-		if *testCmd != "" {
-			fmt.Printf("Test command: %s\n", *testCmd)
-		}
-		if *hist {
-			fmt.Println("History mode enabled")
-		}
+	fmt.Println("Starting fixprog operation...")
+	fmt.Printf("Directory: %s\n", *dir)
+	fmt.Printf("Description: %s\n", *description)
+	if *testCmd != "" {
+		fmt.Printf("Test command: %s\n", *testCmd)
 	}
+	fmt.Printf("Verbose mode: %v\n", *verbose)
+	fmt.Printf("History mode: %v\n", *hist)
+	fmt.Println("---")
 
 	// Check if the operation is safe to perform
-	if *verbose {
-		fmt.Println("Checking if the operation is safe to perform...")
-	}
+	fmt.Println("Checking if the operation is safe to perform...")
 	if !isSafeOperation(*dir) {
 		return fmt.Errorf("the operation is not considered safe for the given directory: %s", *dir)
 	}
-	if *verbose {
-		fmt.Println("Operation deemed safe. Proceeding...")
-	}
+	fmt.Println("Operation deemed safe. Proceeding...")
 
 	ctx := context.Background()
-	if *verbose {
-		fmt.Println("Creating Anthropic client...")
-	}
+	fmt.Println("Creating Anthropic client...")
 	client, err := anthropic.New()
 	if err != nil {
 		return fmt.Errorf("failed to create Anthropic client: %w", err)
 	}
-	if *verbose {
-		fmt.Println("Anthropic client created successfully.")
-	}
+	fmt.Println("Anthropic client created successfully.")
 
-	if *verbose {
-		fmt.Println("Checking if the directory is a Git repository...")
-	}
+	fmt.Println("Checking if the directory is a Git repository...")
 	isGitRepo, err := isGitRepository(*dir)
 	if err != nil {
 		return fmt.Errorf("failed to check if directory is a git repository: %w", err)
 	}
-	if *verbose {
-		if isGitRepo {
-			fmt.Println("Directory is a Git repository.")
-		} else {
-			fmt.Println("Directory is not a Git repository.")
-		}
+	if isGitRepo {
+		fmt.Println("Directory is a Git repository.")
+	} else {
+		fmt.Println("Directory is not a Git repository.")
 	}
 
-	if *verbose {
-		fmt.Println("Capturing initial state of the directory...")
-	}
+	fmt.Println("Capturing initial state of the directory...")
 	initialState, err := getCurrentState(*dir)
 	if err != nil {
 		return fmt.Errorf("failed to get initial state: %w", err)
 	}
-	if *verbose {
-		fmt.Printf("Initial state captured. %d files recorded.\n", len(initialState))
-	}
+	fmt.Printf("Initial state captured. %d files recorded.\n", len(initialState))
 
 	attempts := 0
 	maxAttempts := 5
 
 	var history []map[string]string
 	if *hist {
+		fmt.Println("Loading history...")
 		history, err = loadHistory(*dir)
 		if err != nil {
 			return fmt.Errorf("failed to load history: %w", err)
 		}
+		fmt.Printf("History loaded. %d previous attempts found.\n", len(history))
 	}
 
 	for {
@@ -116,23 +101,17 @@ func run() error {
 			return fmt.Errorf("maximum number of attempts (%d) reached without fixing the problem", maxAttempts)
 		}
 
-		if *verbose {
-			fmt.Printf("Attempt %d of %d\n", attempts+1, maxAttempts)
-			fmt.Println("Gathering source files...")
-		}
+		fmt.Printf("\nAttempt %d of %d\n", attempts+1, maxAttempts)
+		fmt.Println("Gathering source files...")
 		files, err := getSourceFiles(*dir)
 		if err != nil {
 			return fmt.Errorf("failed to get source files: %w", err)
 		}
-		if *verbose {
-			fmt.Printf("Found %d source files.\n", len(files))
-		}
+		fmt.Printf("Found %d source files.\n", len(files))
 
 		fileContents := make(map[string]string)
 		for _, file := range files {
-			if *verbose {
-				fmt.Printf("Reading file: %s\n", file)
-			}
+			fmt.Printf("Reading file: %s\n", file)
 			content, err := ioutil.ReadFile(file)
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %w", file, err)
@@ -145,98 +124,75 @@ func run() error {
 			userInput += fmt.Sprintf("=== %s ===\n%s\n\n", file, content)
 		}
 
-		if *verbose {
-			fmt.Println("Preparing to send request to Anthropic API...")
-			fmt.Printf("Request size: %d bytes\n", len(userInput))
-		}
+		fmt.Println("Preparing to send request to Anthropic API...")
+		fmt.Printf("Request size: %d bytes\n", len(userInput))
 
 		messages := []llms.MessageContent{
 			llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
 			llms.TextParts(llms.ChatMessageTypeHuman, userInput),
 		}
 
-		if *verbose {
-			fmt.Println("Sending request to Anthropic API...")
-			startTime := time.Now()
-		}
+		fmt.Println("Sending request to Anthropic API...")
+		startTime := time.Now()
 
 		resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(0.1), llms.WithMaxTokens(4000))
 		if err != nil {
 			return fmt.Errorf("failed to generate content: %w", err)
 		}
 
-		if *verbose {
-			duration := time.Since(startTime)
-			fmt.Printf("Received response from Anthropic API. Time taken: %v\n", duration)
-			fmt.Printf("Response size: %d bytes\n", len(resp.Choices[0].Content))
-		}
+		duration := time.Since(startTime)
+		fmt.Printf("Received response from Anthropic API. Time taken: %v\n", duration)
+		fmt.Printf("Response size: %d bytes\n", len(resp.Choices[0].Content))
 
-		if *verbose {
-			fmt.Println("Parsing changes from the API response...")
-		}
+		fmt.Println("Parsing changes from the API response...")
 		changes, err := parseChanges(resp.Choices[0].Content)
 		if err != nil {
 			return fmt.Errorf("failed to parse changes: %w", err)
 		}
-		if *verbose {
-			fmt.Printf("Parsed %d file changes.\n", len(changes))
-		}
+		fmt.Printf("Parsed %d file changes.\n", len(changes))
 
-		if *verbose {
-			fmt.Println("Applying changes to files...")
-		}
+		fmt.Println("Applying changes to files...")
 		if err := applyChanges(*dir, changes); err != nil {
 			return fmt.Errorf("failed to apply changes: %w", err)
 		}
-		if *verbose {
-			fmt.Println("Changes applied successfully.")
-		}
+		fmt.Println("Changes applied successfully.")
 
 		if *hist {
+			fmt.Println("Saving history...")
 			history = append(history, changes)
 			if err := saveHistory(*dir, history); err != nil {
 				return fmt.Errorf("failed to save history: %w", err)
 			}
+			fmt.Println("History saved.")
 		}
 
 		if *testCmd != "" {
-			if *verbose {
-				fmt.Printf("Running test command: %s\n", *testCmd)
-			}
+			fmt.Printf("Running test command: %s\n", *testCmd)
 			if err := runTestCommand(*testCmd, *dir); err != nil {
-				if *verbose {
-					fmt.Println("Test command failed. Preparing to revert changes and try again.")
-				}
+				fmt.Println("Test command failed. Preparing to revert changes and try again.")
 				if isGitRepo {
-					if *verbose {
-						fmt.Println("Reverting changes using Git...")
-					}
+					fmt.Println("Reverting changes using Git...")
 					if err := gitCheckout(*dir); err != nil {
 						return fmt.Errorf("failed to revert changes using git: %w", err)
 					}
 				} else {
-					if *verbose {
-						fmt.Println("Reverting changes manually...")
-					}
+					fmt.Println("Reverting changes manually...")
 					if err := revertToState(*dir, initialState); err != nil {
 						return fmt.Errorf("failed to revert changes: %w", err)
 					}
 				}
-				if *verbose {
-					fmt.Println("Changes reverted successfully.")
-				}
+				fmt.Println("Changes reverted successfully.")
 				attempts++
 				continue
 			}
-			if *verbose {
-				fmt.Println("Test command executed successfully.")
-			}
+			fmt.Println("Test command executed successfully.")
 		}
 
 		fmt.Println("Changes applied successfully.")
 		break
 	}
 
+	fmt.Println("fixprog operation completed successfully.")
 	return nil
 }
 
