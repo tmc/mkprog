@@ -143,10 +143,6 @@ func analyzeWithAI(ctx context.Context, gitData string) (string, error) {
 		return "", fmt.Errorf("failed to generate content: %w", err)
 	}
 
-	var result strings.Builder
-	for _, part := range resp.Choices[0].Content.Parts {
-		result.WriteString(part.Text)
-	}
-
-	return result.String(), nil
+	// The response content is now directly accessible as a string
+	return resp.Choices[0].Content, nil
 }
