@@ -1,59 +1,54 @@
 # mkprog
 
-`mkprog` is a Go program that generates other Go programs using AI. It utilizes the `langchaingo` library to interact with an AI language model and create structured Go projects based on user input.
-
-## Installation
-
-To install `mkprog`, you need Go installed on your machine. If you don't have Go installed, you can download and install it from [https://go.dev/dl/](https://go.dev/dl/).
-
-Once Go is installed, you can set up `mkprog` by running:
-
-```bash
-go install github.com/tmc/mkprog@latest
-```
-
-## Usage
-
-To use `mkprog`, run the following command:
-
-```shell
-mkprog <output directory> "description of the program you want to create"
-```
-
-For example:
-
-```shell
-mkprog haikuify "Create a program that generates haiku poems based on user input"
-```
-
-The generated program will be designed to use the `langchaingo` library to interact with AI models and process user input according to the specified description.
-
-## Options
-
-- `-temp`: Set the temperature for AI generation (typically 0.0 to 1.0). Default is 0.1.
-
-Example:
-
-```shell
-mkprog -temp 0.7 my_project "Create a program that generates jokes"
-```
+mkprog is a Go program that generates structured content based on user input using the langchaingo library to interact with AI language models.
 
 ## Features
 
-- Generates complete, functional Go programs
-- Uses the `langchaingo` library for AI model interaction
-- Follows Go best practices
-- Provides clear usage instructions and documentation
+- Generates complete, functional Go programs based on user descriptions
+- Uses the langchaingo library to interact with AI language models
+- Implements error handling and follows Go best practices
+- Generates all necessary files for a runnable Go project
+- Supports custom system prompts and temperature settings
+- Optionally runs goimports on the generated code
 
-## Requirements
+## Installation
 
-- Go 1.22 or later
-- An Anthropic API key set in the `ANTHROPIC_API_KEY` environment variable
+1. Ensure you have Go 1.22 or later installed on your system.
+2. Clone this repository:
+   ```
+   git clone https://github.com/tmc/mkprog.git
+   cd mkprog
+   ```
+3. Build the program:
+   ```
+   go build
+   ```
+
+## Usage
+
+```
+./mkprog [-temp <temperature>] <output_directory> <program_description>
+```
+
+- `-temp`: Set the temperature for AI generation (0.0 to 1.0, default: 0.1)
+- `<output_directory>`: The directory where the generated program will be created
+- `<program_description>`: A description of the program you want to generate
+
+Example:
+```
+./mkprog -temp 0.2 my_program "A CLI tool that converts markdown to HTML"
+```
+
+## Output
+
+The program will generate a complete Go project in the specified output directory, including:
+
+- main.go
+- go.mod
+- README.md
+- LICENSE (MIT)
+- Any other necessary files
 
 ## License
 
-mkprog is open-source software licensed under the MIT license.
-
-## Contributing
-
-Contributions to mkprog are welcome! Please feel free to submit a Pull Request
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
