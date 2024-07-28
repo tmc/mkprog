@@ -250,6 +250,15 @@ func getCurrentState(dir string) (map[string]string, error) {
 	return state, nil
 }
 
+func isSourceFile(path string) bool {
+	ext := filepath.Ext(path)
+	switch ext {
+	case ".go", ".c", ".cpp", ".h", ".hpp", ".java", ".js", ".ts", ".rs", ".py", ".txt", ".md":
+		return true
+	}
+	return false
+}
+
 func getSourceFiles(dir string) ([]string, error) {
 	var files []string
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -257,7 +266,11 @@ func getSourceFiles(dir string) ([]string, error) {
 			return err
 		}
 		if !info.IsDir() && isSourceFile(path) {
-			files = append(files, path)
+			relPath, err := filepath.Rel(dir, path)
+			if err != nil {
+				return fmt.Errorf("failed to get relative path: %w", err)
+			}
+			files = append(files, relPath)
 		}
 		return nil
 	})
@@ -266,15 +279,6 @@ func getSourceFiles(dir string) ([]string, error) {
 	}
 
 	return files, nil
-}
-
-func isSourceFile(path string) bool {
-	ext := filepath.Ext(path)
-	switch ext {
-	case ".go", ".c", ".cpp", ".h", ".hpp", ".java", ".js", ".ts", ".rs", ".py":
-		return true
-	}
-	return false
 }
 
 func parseChanges(content string) (map[string]string, error) {
