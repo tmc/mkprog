@@ -23,6 +23,7 @@ var verbose bool
 var dir string
 var dryRun bool
 var concurrency int
+var fileExtensions string
 
 func main() {
 	if err := run(); err != nil {
@@ -36,17 +37,18 @@ func run() error {
 	flag.StringVar(&dir, "dir", ".", "Directory to operate in")
 	flag.BoolVar(&dryRun, "dry-run", false, "Perform a dry run without making changes")
 	flag.IntVar(&concurrency, "concurrency", 5, "Number of concurrent file processing")
+	flag.StringVar(&fileExtensions, "extensions", ".go,.py,.js,.java,.cpp", "Comma-separated list of file extensions to process")
 	flag.Parse()
 
 	args := flag.Args()
 	if len(args) < 1 {
-		return fmt.Errorf("usage: %s [-verbose] [-dir <directory>] [-dry-run] [-concurrency <num>] <change description>", os.Args[0])
+		return fmt.Errorf("usage: %s [-verbose] [-dir <directory>] [-dry-run] [-concurrency <num>] [-extensions <ext1,ext2,...>] <change description>", os.Args[0])
 	}
 
 	changeDescription := strings.Join(args, " ")
 
 	if verbose {
-		fmt.Printf("Directory: %s\nChange description: %s\nDry run: %v\nConcurrency: %d\n", dir, changeDescription, dryRun, concurrency)
+		fmt.Printf("Directory: %s\nChange description: %s\nDry run: %v\nConcurrency: %d\nFile extensions: %s\n", dir, changeDescription, dryRun, concurrency, fileExtensions)
 	}
 
 	// Change to the specified directory
@@ -69,6 +71,8 @@ func run() error {
 	semaphore := make(chan struct{}, concurrency)
 	errChan := make(chan error, 1)
 
+	extensions := strings.Split(fileExtensions, ",")
+
 	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -76,7 +80,7 @@ func run() error {
 		if d.IsDir() {
 			return nil
 		}
-		if filepath.Ext(path) != ".go" {
+		if !hasValidExtension(path, extensions) {
 			return nil
 		}
 
@@ -116,13 +120,23 @@ func run() error {
 	return nil
 }
 
+func hasValidExtension(path string, extensions []string) bool {
+	ext := filepath.Ext(path)
+	for _, validExt := range extensions {
+		if ext == strings.TrimSpace(validExt) {
+			return true
+		}
+	}
+	return false
+}
+
 func processFile(ctx context.Context, client *anthropic.LLM, path, changeDescription string) error {
 	originalContent, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("error reading file %s: %w", path, err)
 	}
 
-	improvedContent, reasoning, err := improveProgram(ctx, client, string(originalContent), changeDescription)
+	improvedContent, reasoning, err := improveProgram(ctx, client, string(originalContent), changeDescription, filepath.Ext(path))
 	if err != nil {
 		return fmt.Errorf("error improving program %s: %w", path, err)
 	}
@@ -153,10 +167,10 @@ func processFile(ctx context.Context, client *anthropic.LLM, path, changeDescrip
 	return nil
 }
 
-func improveProgram(ctx context.Context, client *anthropic.LLM, originalContent, changeDescription string) (string, string, error) {
+func improveProgram(ctx context.Context, client *anthropic.LLM, originalContent, changeDescription, fileExtension string) (string, string, error) {
 	messages := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
-		llms.TextParts(llms.ChatMessageTypeHuman, fmt.Sprintf("Original program:\n\n%s\n\nChange description: %s\n\nPlease use <anthinking> tags to show your reasoning process.", originalContent, changeDescription)),
+		llms.TextParts(llms.ChatMessageTypeHuman, fmt.Sprintf("Original program (%s):\n\n%s\n\nChange description: %s\n\nPlease use <anthinking> tags to show your reasoning process.", fileExtension, originalContent, changeDescription)),
 	}
 
 	if verbose {
