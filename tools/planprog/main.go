@@ -43,7 +43,7 @@ func run() error {
 			llms.TextParts(llms.ChatMessageTypeHuman, initialDescription),
 		}
 
-		resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(0.7), llms.WithMaxTokens(2000))
+		resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(0.1), llms.WithMaxTokens(4000))
 		if err != nil {
 			return fmt.Errorf("failed to generate content: %w", err)
 		}
@@ -69,4 +69,3 @@ func run() error {
 
 	return nil
 }
-
