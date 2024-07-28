@@ -191,7 +191,8 @@ func getSourceContext() (string, error) {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && (strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "go.mod") || strings.HasSuffix(path, "go.sum")) {
+		if !info.IsDir() && (strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "go.mod") || strings.HasSuffix(path, "go.sum") ||
+			strings.HasSuffix(path, ".txt") || strings.HasSuffix(path, ".md")) {
 			content, err := ioutil.ReadFile(path)
 			if err != nil {
 				return err
