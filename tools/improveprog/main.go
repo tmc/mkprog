@@ -127,6 +127,11 @@ func processFile(ctx context.Context, client *anthropic.LLM, path, changeDescrip
 		return fmt.Errorf("error improving program %s: %w", path, err)
 	}
 
+	// Add a safeguard to prevent empty content
+	if len(strings.TrimSpace(improvedContent)) == 0 {
+		return fmt.Errorf("improved content for %s is empty, skipping update", path)
+	}
+
 	if verbose {
 		fmt.Printf("Reasoning for %s:\n%s\n", path, reasoning)
 	}
@@ -134,6 +139,12 @@ func processFile(ctx context.Context, client *anthropic.LLM, path, changeDescrip
 	if dryRun {
 		fmt.Printf("Dry run: Would improve %s\n", path)
 	} else {
+		// Create a backup of the original file
+		backupPath := path + ".bak"
+		if err := os.WriteFile(backupPath, originalContent, 0644); err != nil {
+			return fmt.Errorf("error creating backup file %s: %w", backupPath, err)
+		}
+
 		if err := os.WriteFile(path, []byte(improvedContent), 0644); err != nil {
 			return fmt.Errorf("error writing improved content to %s: %w", path, err)
 		}
@@ -163,6 +174,11 @@ func improveProgram(ctx context.Context, client *anthropic.LLM, originalContent,
 
 	content := resp.Choices[0].Content
 	improvedProgram, reasoning := extractProgramAndReasoning(content)
+
+	// Add a safeguard to prevent empty content
+	if len(strings.TrimSpace(improvedProgram)) == 0 {
+		return originalContent, reasoning, fmt.Errorf("improved program is empty, keeping original content")
+	}
 
 	return improvedProgram, reasoning, nil
 }
