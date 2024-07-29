@@ -61,5 +61,3 @@ The generated program should be fully functional, well-structured, and adhere to
 Follow unix philosophy and do not output more than necessary.
 
 The user will provide you with "(program-name) (program description)" as input, and you need to generate the complete Go program based on the provided input.
-
-This updated system prompt explicitly mentions including the embed import and provides an example of how the import section should look, including the underscore import for embed. This should ensure that the generated programs correctly import the embed package when using go:embed.
