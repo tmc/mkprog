@@ -46,7 +46,8 @@ func run() error {
 	}
 	fmt.Fprintf(os.Stderr, "Program description recieved, working on enhancing it...\n")
 
-	for {
+	// TODO: consider interactive (or non-interactive) refinement loop.
+	for i := 0; i < 1; i++ {
 		messages := []llms.MessageContent{
 			llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
 			llms.TextParts(llms.ChatMessageTypeHuman, initialDescription),
@@ -65,7 +66,6 @@ func run() error {
 		additionalInfo := scanner.Text()
 		initialDescription += "\n\nAdditional information: " + additionalInfo
 	}
-
 	fmt.Println("\nGreat! Your program description is ready.")
 
 	return nil
