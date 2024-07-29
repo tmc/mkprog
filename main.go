@@ -41,7 +41,9 @@ func run() error {
 	}
 
 	ctx := context.Background()
-	llm, err := anthropic.New()
+	llm, err := anthropic.New(
+		anthropic.WithAnthropicBetaHeader(anthropic.MaxTokensAnthropicSonnet35),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to initialize language model: %w", err)
 	}
@@ -56,7 +58,7 @@ func run() error {
 	_, err = llm.GenerateContent(ctx,
 		messages,
 		llms.WithTemperature(*temperature),
-		llms.WithMaxTokens(4000),
+		llms.WithMaxTokens(8000),
 		llms.WithStreamingFunc(fw.streamContent),
 	)
 
