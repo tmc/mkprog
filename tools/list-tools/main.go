@@ -9,28 +9,25 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Tool struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Location    string `json:"location"`
-	Type        string `json:"type"`
-	Flags       string `json:"flags"`
-	UsesStdin   bool   `json:"uses_stdin"`
+	Name        string
+	Description string
+	Path        string
 }
 
 type Config struct {
-	AdditionalDirs []string `json:"additional_dirs"`
+	AdditionalDirectories []string `json:"additionalDirectories"`
 }
 
 var (
-	cache      map[string]Tool
-	cacheMutex sync.RWMutex
-	config     Config
+	cacheFile     = filepath.Join(os.TempDir(), "list-tools-cache.json")
+	configFile    = filepath.Join(os.Getenv("HOME"), ".list-tools.json")
+	cacheDuration = 24 * time.Hour
 )
 
 func main() {
@@ -41,282 +38,178 @@ func main() {
 }
 
 func run() error {
-	loadConfig()
-	loadCache()
+	searchTerm := flag.String("search", "", "Search term for filtering tools")
+	infoTool := flag.String("info", "", "Display detailed information about a specific tool")
+	flag.Parse()
 
-	searchCmd := flag.NewFlagSet("search", flag.ExitOnError)
-	infoCmd := flag.NewFlagSet("info", flag.ExitOnError)
-
-	if len(os.Args) < 2 {
-		return listAllTools()
-	}
-
-	switch os.Args[1] {
-	case "search":
-		return searchCmd.Parse(os.Args[2:])
-	case "info":
-		return infoCmd.Parse(os.Args[2:])
-	default:
-		return fmt.Errorf("unknown command: %s", os.Args[1])
-	}
-}
-
-func loadConfig() {
-	configFile := "config.json"
-	data, err := ioutil.ReadFile(configFile)
+	config, err := loadConfig()
 	if err != nil {
-		fmt.Printf("Warning: Could not read config file: %v\n", err)
-		return
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	err = json.Unmarshal(data, &config)
+	tools, err := getTools(config.AdditionalDirectories)
 	if err != nil {
-		fmt.Printf("Warning: Could not parse config file: %v\n", err)
-	}
-}
-
-func loadCache() {
-	cacheFile := "tools_cache.json"
-	data, err := ioutil.ReadFile(cacheFile)
-	if err != nil {
-		cache = make(map[string]Tool)
-		return
+		return fmt.Errorf("failed to get tools: %w", err)
 	}
 
-	err = json.Unmarshal(data, &cache)
-	if err != nil {
-		fmt.Printf("Warning: Could not parse cache file: %v\n", err)
-		cache = make(map[string]Tool)
-	}
-}
-
-func saveCache() {
-	cacheFile := "tools_cache.json"
-	data, err := json.Marshal(cache)
-	if err != nil {
-		fmt.Printf("Warning: Could not marshal cache: %v\n", err)
-		return
+	if *infoTool != "" {
+		return displayToolInfo(tools, *infoTool)
 	}
 
-	err = ioutil.WriteFile(cacheFile, data, 0644)
-	if err != nil {
-		fmt.Printf("Warning: Could not save cache file: %v\n", err)
-	}
-}
-
-func listAllTools() error {
-	tools, err := scanTools()
-	if err != nil {
-		return err
+	if *searchTerm != "" {
+		tools = filterTools(tools, *searchTerm)
 	}
 
-	for _, tool := range tools {
-		fmt.Printf("%s - %s\n", tool.Name, tool.Description)
-	}
-
+	displayTools(tools)
 	return nil
 }
 
-func scanTools() ([]Tool, error) {
-	var tools []Tool
-	var wg sync.WaitGroup
-	toolsChan := make(chan Tool)
-	errorsChan := make(chan error)
-
-	// Scan current repo
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		scanDirectory(".", toolsChan, errorsChan)
-	}()
-
-	// Scan PATH entries within user's home directory
-	homeDir, err := os.UserHomeDir()
+func loadConfig() (Config, error) {
+	var config Config
+	data, err := ioutil.ReadFile(configFile)
 	if err != nil {
-		return nil, fmt.Errorf("could not get user home directory: %v", err)
-	}
-
-	pathDirs := filepath.SplitList(os.Getenv("PATH"))
-	for _, dir := range pathDirs {
-		if strings.HasPrefix(dir, homeDir) {
-			wg.Add(1)
-			go func(d string) {
-				defer wg.Done()
-				scanDirectory(d, toolsChan, errorsChan)
-			}(dir)
+		if os.IsNotExist(err) {
+			return config, nil
 		}
+		return config, err
+	}
+	err = json.Unmarshal(data, &config)
+	return config, err
+}
+
+func getTools(additionalDirs []string) ([]Tool, error) {
+	cachedTools, err := loadCache()
+	if err == nil {
+		return cachedTools, nil
 	}
 
-	// Scan additional directories from config
-	for _, dir := range config.AdditionalDirs {
+	var tools []Tool
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	dirs := append([]string{"./"}, additionalDirs...)
+
+	for _, dir := range dirs {
 		wg.Add(1)
 		go func(d string) {
 			defer wg.Done()
-			scanDirectory(d, toolsChan, errorsChan)
+			localTools, err := scanDirectory(d)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error scanning directory %s: %v\n", d, err)
+				return
+			}
+			mu.Lock()
+			tools = append(tools, localTools...)
+			mu.Unlock()
 		}(dir)
 	}
 
-	go func() {
-		wg.Wait()
-		close(toolsChan)
-		close(errorsChan)
-	}()
+	wg.Wait()
 
-	for {
-		select {
-		case tool, ok := <-toolsChan:
-			if !ok {
-				saveCache()
-				return tools, nil
-			}
-			tools = append(tools, tool)
-		case err := <-errorsChan:
-			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-		}
+	if err := saveCache(tools); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to save cache: %v\n", err)
 	}
+
+	return tools, nil
 }
 
-func scanDirectory(dir string, toolsChan chan<- Tool, errorsChan chan<- error) {
+func scanDirectory(dir string) ([]Tool, error) {
+	var tools []Tool
+
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			errorsChan <- fmt.Errorf("error accessing %s: %v", path, err)
-			return nil
+			return err
 		}
-
 		if info.IsDir() {
 			return nil
 		}
-
 		if info.Mode().Perm()&0111 != 0 {
-			tool, err := getToolInfo(path)
-			if err != nil {
-				errorsChan <- fmt.Errorf("error getting tool info for %s: %v", path, err)
-				return nil
-			}
-			toolsChan <- tool
+			description, _ := getToolDescription(path)
+			tools = append(tools, Tool{
+				Name:        filepath.Base(path),
+				Description: description,
+				Path:        path,
+			})
 		}
-
 		return nil
 	})
 
-	if err != nil {
-		errorsChan <- fmt.Errorf("error walking directory %s: %v", dir, err)
-	}
+	return tools, err
 }
 
-func getToolInfo(path string) (Tool, error) {
-	cacheMutex.RLock()
-	cachedTool, exists := cache[path]
-	cacheMutex.RUnlock()
-
-	if exists {
-		return cachedTool, nil
-	}
-
-	name := filepath.Base(path)
-	toolType := "custom toolchain tool"
-	if strings.HasPrefix(path, "/usr/bin") || strings.HasPrefix(path, "/bin") {
-		toolType = "standard system tool"
-	}
-
-	description := getToolDescription(path)
-	flags, usesStdin := getToolFlagsAndStdin(path)
-
-	tool := Tool{
-		Name:        name,
-		Description: description,
-		Location:    path,
-		Type:        toolType,
-		Flags:       flags,
-		UsesStdin:   usesStdin,
-	}
-
-	cacheMutex.Lock()
-	cache[path] = tool
-	cacheMutex.Unlock()
-
-	return tool, nil
-}
-
-func getToolDescription(path string) string {
+func getToolDescription(path string) (string, error) {
 	cmd := exec.Command(path, "--help")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "No description available"
+		return "", err
 	}
-
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.Contains(line, "description") || strings.Contains(line, "usage") {
-			return strings.TrimSpace(line)
+		if strings.TrimSpace(line) != "" {
+			return line, nil
 		}
 	}
-
-	return "No description available"
+	return "", fmt.Errorf("no description found")
 }
 
-func getToolFlagsAndStdin(path string) (string, bool) {
-	cmd := exec.Command(path, "--help")
-	output, err := cmd.CombinedOutput()
+func loadCache() ([]Tool, error) {
+	var tools []Tool
+	data, err := ioutil.ReadFile(cacheFile)
 	if err != nil {
-		return "", false
+		return nil, err
 	}
 
-	flags := ""
-	usesStdin := false
-
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, "-") || strings.Contains(line, "--") {
-			flags += line + "\n"
-		}
-		if strings.Contains(strings.ToLower(line), "stdin") {
-			usesStdin = true
-		}
+	err = json.Unmarshal(data, &tools)
+	if err != nil {
+		return nil, err
 	}
 
-	return strings.TrimSpace(flags), usesStdin
+	info, err := os.Stat(cacheFile)
+	if err != nil {
+		return nil, err
+	}
+
+	if time.Since(info.ModTime()) > cacheDuration {
+		return nil, fmt.Errorf("cache expired")
+	}
+
+	return tools, nil
 }
 
-func searchTools(term string) error {
-	tools, err := scanTools()
+func saveCache(tools []Tool) error {
+	data, err := json.Marshal(tools)
 	if err != nil {
 		return err
 	}
+	return ioutil.WriteFile(cacheFile, data, 0644)
+}
 
-	regex, err := regexp.Compile(strings.ToLower(term))
-	if err != nil {
-		return fmt.Errorf("invalid search term: %v", err)
-	}
-
+func filterTools(tools []Tool, term string) []Tool {
+	var filtered []Tool
 	for _, tool := range tools {
-		if regex.MatchString(strings.ToLower(tool.Name)) || regex.MatchString(strings.ToLower(tool.Description)) {
-			fmt.Printf("%s - %s\n", tool.Name, tool.Description)
+		if strings.Contains(strings.ToLower(tool.Name), strings.ToLower(term)) ||
+			strings.Contains(strings.ToLower(tool.Description), strings.ToLower(term)) {
+			filtered = append(filtered, tool)
 		}
 	}
-
-	return nil
+	return filtered
 }
 
-func displayToolInfo(name string) error {
-	tools, err := scanTools()
-	if err != nil {
-		return err
+func displayTools(tools []Tool) {
+	for _, tool := range tools {
+		fmt.Printf("%s: %s\n", tool.Name, tool.Description)
 	}
+}
 
+func displayToolInfo(tools []Tool, name string) error {
 	for _, tool := range tools {
 		if tool.Name == name {
 			fmt.Printf("Name: %s\n", tool.Name)
 			fmt.Printf("Description: %s\n", tool.Description)
-			fmt.Printf("Location: %s\n", tool.Location)
-			fmt.Printf("Type: %s\n", tool.Type)
-			fmt.Printf("Flags:\n%s\n", tool.Flags)
-			fmt.Printf("Uses stdin: %v\n", tool.UsesStdin)
+			fmt.Printf("Path: %s\n", tool.Path)
 			return nil
 		}
 	}
-
 	return fmt.Errorf("tool not found: %s", name)
 }

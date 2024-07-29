@@ -1,3 +1,3 @@
-module list-tools
+module github.com/yourusername/list-tools
 
-go 1.20
+go 1.16
