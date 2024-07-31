@@ -1,1 +1,0 @@
-cd better-mkprog; go mod tidy && go install
