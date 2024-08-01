@@ -23,7 +23,7 @@ func main() {
 func run() error {
 	args := os.Args[1:]
 	if len(args) == 0 {
-		return fmt.Errorf("usage: fixme [--] <command> [args...] [-- <description>]")
+		return fmt.Errorf("usage: fixme [flags] -- <command> [args...]")
 	}
 
 	if args[0] == "--" {
@@ -51,8 +51,21 @@ func run() error {
 				return fmt.Errorf("-desc flag requires a value")
 			}
 		default:
-			command = args[i]
-			commandArgs = args[i+1:]
+			separatorIndex := -1
+			for i, arg := range args {
+				if arg == "--" {
+					separatorIndex = i
+					break
+				}
+			}
+			if separatorIndex == -1 {
+				return fmt.Errorf("usage: fixme [flags] -- <command> [args...]")
+			}
+			if separatorIndex == len(args)-1 {
+				return fmt.Errorf("no command specified after --")
+			}
+			command = args[separatorIndex+1]
+			commandArgs = args[separatorIndex+2:]
 			i = len(args)
 		}
 	}

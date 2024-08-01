@@ -1,4 +1,4 @@
-module fixme
+module github.com/tmc/mkprog/tools/fixme
 
 go 1.22.0
 

@@ -1,40 +1,66 @@
 # fixme
 
-fixme is a command-line tool that runs a given command, analyzes its output, and suggests actions to add to a .actions file. It uses AI to generate actionable items based on the command output.
+fixme is a command-line tool designed to help debug and fix issues with Go modules and other shell commands. It uses AI-powered suggestions to provide potential fixes for failed commands.
+
+## Features
+
+- Executes shell commands and analyzes their output
+- Provides AI-generated suggestions for fixing failed commands
+- Focuses on Go module-related issues, but can handle general shell commands
+- Supports command history and custom descriptions for better context
 
 ## Installation
 
-1. Ensure you have Go 1.20 or later installed on your system.
-2. Clone this repository or download the source code.
-3. Navigate to the project directory and run:
+To install fixme, make sure you have Go installed on your system, then run:
 
 ```
-go build
+go install github.com/tmc/mkprog/tools/fixme@latest
 ```
 
-This will create an executable named `fixme` in the current directory.
+Replace `tmc` with the appropriate GitHub username or organization.
 
 ## Usage
 
 To use fixme, run it with the following syntax:
 
 ```
-./fixme -- <command> [args...]
+fixme [flags] -- <command> [args...]
 ```
 
 For example:
 
 ```
-./fixme -- go build ./...
+fixme -- go mod tidy
 ```
 
-This will run the `go build ./...` command, analyze its output, and add suggested actions to the `.actions` file in the current directory.
+### Flags
 
-## Configuration
+- `-hist`: Use command history for better suggestions
+- `-desc <description>`: Provide a custom description of the issue
 
-Make sure to set the `ANTHROPIC_API_KEY` environment variable with your Anthropic API key before running the program.
+## Examples
+
+1. Basic usage:
+   ```
+   fixme -- go build ./...
+   ```
+
+2. With history and description:
+   ```
+   fixme -hist -desc "Trying to update dependencies" -- go get -u ./...
+   ```
+
+## How it works
+
+1. fixme executes the provided command
+2. If the command fails, it analyzes the output and error message
+3. It then generates a suggestion using AI, considering the command context, fix history, and project structure
+4. The user can choose to apply the suggestion or exit
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
