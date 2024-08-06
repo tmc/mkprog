@@ -1,0 +1,310 @@
+=== AI Pipeline Development Session Started at Fri Aug  2 07:08:23 PDT 2024 ===
+=== AI Pipeline Development Session Started at Fri Aug  2 07:08:24 PDT 2024 ===
+2024-08-02 07:08:24 Command: 
+
+=== AI Pipeline Development Session Started at Fri Aug  2 07:08:36 PDT 2024 ===
+2024-08-02 07:08:38 Command: 
+
+2024-08-02 07:08:52 Command: ./ai-pipeline-dev.sh
+=== AI Pipeline Development Session Started at Fri Aug  2 07:08:52 PDT 2024 ===
+> 2024-08-02 07:08:52 Command: 
+
+> 2024-08-02 07:09:41 Command: mkdir go-evaluator
+
+> 2024-08-02 07:09:49 Command: cd go-evaluator
+
+> 2024-08-02 07:09:54 Command: mkprog . "A Go program named 'evaluator' that takes a Go file as input, performs a simple evaluation (counting lines of code), and outputs a score between 0 and 1"
+Creating file: go.mod
+Creating file: go.mod
+Creating file: main.go
+Creating file: main.go
+Creating file: system-prompt.txt
+Creating file: system-prompt.txt
+Creating file: README.md
+Creating file: README.md
+Creating file: LICENSE
+Creating file: LICENSE
+Running goimports...
+Running goimports...
+Program generation complete. Output directory: .
+
+Usage:
+cd .
+go mod tidy; go run .
+
+Optional: go install
+Then run: .
+Program generation complete. Output directory: .
+
+Usage:
+cd .
+go mod tidy; go run .
+
+Optional: go install
+Then run: .
+
+> 2024-08-02 07:10:34 Command: go mod tidy; go run .
+Error: usage: /var/folders/jc/k724h4557wqb_p20sgp7j0fw0000gn/T/go-build1319047424/b001/exe/evaluator <go_file>
+Error: usage: /var/folders/jc/k724h4557wqb_p20sgp7j0fw0000gn/T/go-build1319047424/b001/exe/evaluator <go_file>
+exit status 1
+exit status 1
+
+> 2024-08-02 07:10:54 Command: ls -la
+total 64
+drwxr-xr-x@ 11 tmc  staff   352 Aug  2 07:10 .
+drwxr-xr-x@ 22 tmc  staff   704 Aug  2 07:08 ..
+-rw-r--r--@  1 tmc  staff  1065 Aug  2 07:10 LICENSE
+-rw-r--r--@  1 tmc  staff   817 Aug  2 07:10 README.md
+-rw-r--r--@  1 tmc  staff  1632 Aug  2 07:10 ai-pipeline-dev.log
+-rwxr-xr-x@  1 tmc  staff   354 Aug  2 07:07 ai-pipeline-dev.sh
+drwxr-xr-x@  2 tmc  staff    64 Aug  2 07:09 go-evaluator
+-rw-r--r--@  1 tmc  staff   246 Aug  2 07:10 go.mod
+-rw-r--r--@  1 tmc  staff  1827 Aug  2 07:10 go.sum
+-rw-r--r--@  1 tmc  staff  2490 Aug  2 07:10 main.go
+-rw-r--r--@  1 tmc  staff   722 Aug  2 07:10 system-prompt.txt
+total 64
+drwxr-xr-x@ 11 tmc  staff   352 Aug  2 07:10 .
+drwxr-xr-x@ 22 tmc  staff   704 Aug  2 07:08 ..
+-rw-r--r--@  1 tmc  staff  1065 Aug  2 07:10 LICENSE
+-rw-r--r--@  1 tmc  staff   817 Aug  2 07:10 README.md
+-rw-r--r--@  1 tmc  staff  1632 Aug  2 07:10 ai-pipeline-dev.log
+-rwxr-xr-x@  1 tmc  staff   354 Aug  2 07:07 ai-pipeline-dev.sh
+drwxr-xr-x@  2 tmc  staff    64 Aug  2 07:09 go-evaluator
+-rw-r--r--@  1 tmc  staff   246 Aug  2 07:10 go.mod
+-rw-r--r--@  1 tmc  staff  1827 Aug  2 07:10 go.sum
+-rw-r--r--@  1 tmc  staff  2490 Aug  2 07:10 main.go
+-rw-r--r--@  1 tmc  staff   722 Aug  2 07:10 system-prompt.txt
+
+> 2024-08-02 07:10:59 Command: cat main.go
+package main
+
+import (
+	"bufio"
+	"context"
+	_ "embed"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/tmc/langchaingo/llms"
+	"github.com/tmc/langchaingo/llms/anthropic"
+)
+
+//go:embed system-prompt.txt
+var systemPrompt string
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	if len(os.Args) != 2 {
+		return fmt.Errorf("usage: %s <go_file>", os.Args[0])
+	}
+
+	filePath := os.Args[1]
+	if !strings.HasSuffix(filePath, ".go") {
+		return fmt.Errorf("input file must be a .go file")
+	}
+
+	lineCount, err := countLines(filePath)
+	if err != nil {
+		return fmt.Errorf("error counting lines: %w", err)
+	}
+
+	score := calculateScore(lineCount)
+	fmt.Printf("File: %s\n", filepath.Base(filePath))
+	fmt.Printf("Lines of code: %d\n", lineCount)
+	fmt.Printf("Score: %.2f\n", score)
+
+	if err := provideAIFeedback(filePath, lineCount, score); err != nil {
+		return fmt.Errorf("error providing AI feedback: %w", err)
+	}
+
+	return nil
+}
+
+func countLines(filePath string) (int, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return 0, err
+	}
+
+	return lineCount, nil
+}
+
+func calculateScore(lineCount int) float64 {
+	// Simple scoring algorithm: 1 / (1 + e^((x-500)/100))
+	// This gives a score between 0 and 1, with 500 lines of code resulting in a score of 0.5
+	return 1 / (1 + math.Exp(float64(lineCount-500)/100))
+}
+
+func provideAIFeedback(filePath string, lineCount int, score float64) error {
+	ctx := context.Background()
+	client, err := anthropic.New()
+	if err != nil {
+		return fmt.Errorf("error creating Anthropic client: %w", err)
+	}
+
+	fileContent, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("error reading file: %w", err)
+	}
+
+	userInput := fmt.Sprintf("File: %s\nLines of code: %d\nScore: %.2f\n\nFile content:\n%s", filepath.Base(filePath), lineCount, score, string(fileContent))
+
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
+		llms.TextParts(llms.ChatMessageTypeHuman, userInput),
+	}
+
+	resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(0.1), llms.WithMaxTokens(4000))
+	if err != nil {
+		return fmt.Errorf("error generating content: %w", err)
+	}
+
+	fmt.Println("\nAI Feedback:")
+	fmt.Println(resp.Choices[0].Content)
+
+	return nil
+}
+package main
+
+import (
+	"bufio"
+	"context"
+	_ "embed"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/tmc/langchaingo/llms"
+	"github.com/tmc/langchaingo/llms/anthropic"
+)
+
+//go:embed system-prompt.txt
+var systemPrompt string
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	if len(os.Args) != 2 {
+		return fmt.Errorf("usage: %s <go_file>", os.Args[0])
+	}
+
+	filePath := os.Args[1]
+	if !strings.HasSuffix(filePath, ".go") {
+		return fmt.Errorf("input file must be a .go file")
+	}
+
+	lineCount, err := countLines(filePath)
+	if err != nil {
+		return fmt.Errorf("error counting lines: %w", err)
+	}
+
+	score := calculateScore(lineCount)
+	fmt.Printf("File: %s\n", filepath.Base(filePath))
+	fmt.Printf("Lines of code: %d\n", lineCount)
+	fmt.Printf("Score: %.2f\n", score)
+
+	if err := provideAIFeedback(filePath, lineCount, score); err != nil {
+		return fmt.Errorf("error providing AI feedback: %w", err)
+	}
+
+	return nil
+}
+
+func countLines(filePath string) (int, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return 0, err
+	}
+
+	return lineCount, nil
+}
+
+func calculateScore(lineCount int) float64 {
+	// Simple scoring algorithm: 1 / (1 + e^((x-500)/100))
+	// This gives a score between 0 and 1, with 500 lines of code resulting in a score of 0.5
+	return 1 / (1 + math.Exp(float64(lineCount-500)/100))
+}
+
+func provideAIFeedback(filePath string, lineCount int, score float64) error {
+	ctx := context.Background()
+	client, err := anthropic.New()
+	if err != nil {
+		return fmt.Errorf("error creating Anthropic client: %w", err)
+	}
+
+	fileContent, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("error reading file: %w", err)
+	}
+
+	userInput := fmt.Sprintf("File: %s\nLines of code: %d\nScore: %.2f\n\nFile content:\n%s", filepath.Base(filePath), lineCount, score, string(fileContent))
+
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
+		llms.TextParts(llms.ChatMessageTypeHuman, userInput),
+	}
+
+	resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(0.1), llms.WithMaxTokens(4000))
+	if err != nil {
+		return fmt.Errorf("error generating content: %w", err)
+	}
+
+	fmt.Println("\nAI Feedback:")
+	fmt.Println(resp.Choices[0].Content)
+
+	return nil
+}
+
+> 2024-08-02 07:11:45 Command: go-
+./ai-pipeline-dev.sh: line 11: go-: command not found
+./ai-pipeline-dev.sh: line 11: go-: command not found
+
+> 2024-08-02 07:11:47 Command: [A[A[A
+./ai-pipeline-dev.sh: line 11: [A[A[A: command not found
+./ai-pipeline-dev.sh: line 11: [A[A[A: command not found
+
+> 2024-08-02 07:11:47 Command: 
+
+> 2024-08-02 07:11:48 Command: 
+
+> 2024-08-02 23:21:42 Command: 
+
+> 
