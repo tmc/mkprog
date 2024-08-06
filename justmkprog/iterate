@@ -1,7 +1,7 @@
-for i in {0..0}; do
+for i in {0..9}; do
   cp prompt prompt-${i}
   ./attempt ${i}
-  ./compare prompt-${i} |tee comparison-${i}
-  ./pickbest
-  ./mutateprompt
+  ./compare ${i} |tee comparison-${i}
 done
+./pickbest
+./mutateprompt

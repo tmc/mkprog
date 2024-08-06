@@ -29,7 +29,7 @@ compare_files() {
     index=$(echo "$best_file" | sed -E 's/comparison-([0-9]+).*/\1/')
     cp "prompt-$index" ./prompt
     # extract prompt suggestion from the best comparison
-    cat "comparison-$index" | grep -E '<prompt-suggestion>.*</prompt-suggestion>' | sed -E 's/<prompt-suggestion>(.*)<\/prompt-suggestion>/\1/' > ./prompt-suggestion.txt
+    cat "comparison-$index" | sed -n '/<prompt-suggestion>/,/<\/prompt-suggestion>/p' > ./prompt-suggestion.txt
     # Clean up the temporary file
     rm "$comparison_output"
 }
