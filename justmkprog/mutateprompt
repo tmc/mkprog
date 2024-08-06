@@ -7,12 +7,15 @@ current_prompt=$(cat prompt)
 prompt_suggestion=$(cat prompt-suggestion.txt)
 
 # Combine the current prompt and the suggestion
-echo "$current_prompt
+
+# start output:
+echo -n "mkprog" > prompt
+
+echo "<prompt>$current_prompt</prompt>
 
 Consider the following suggestion for improvement:
+<suggestions>
 $prompt_suggestion
+</suggestions>
 
-Please incorporate these suggestions while maintaining the core functionality and purpose of the program." |cgpt -s 'output a new <prompt> with the applied suggestions, the prompt must begin with "mkprog mkprog"'
-
-# Update the prompt, get the <prompt> to </prompt> contents:
-cat /tmp/.mkprogquine | sed -n '/<prompt>/,/<\/prompt>/p' | sed '1d;$d' > prompt
+Please incorporate these suggestions while maintaining the core functionality and purpose of the program." |cgpt -s 'output a new <prompt> with the applied suggestions, the output must begin with "mkprog mkprog \""' -p "mkprog" >> prompt
