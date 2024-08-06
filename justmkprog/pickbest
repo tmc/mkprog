@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Get the latest comparison file
+latest_comparison=$(ls -t comparison-* | head -n 1)
+
+# Extract the comparison and prompt suggestion
+comparison=$(sed -n '/<comparison>/,/<\/comparison>/p' "$latest_comparison" | sed '1d;$d')
+prompt_suggestion=$(sed -n '/<prompt-suggestion>/,/<\/prompt-suggestion>/p' "$latest_comparison" | sed '1d;$d')
+
+# Display the comparison
+echo "Latest comparison:"
+echo "$comparison"
+echo

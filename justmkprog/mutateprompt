@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Read the current prompt
+current_prompt=$(cat prompt)
+
+# Read the prompt suggestion
+prompt_suggestion=$(cat prompt_suggestion.txt)
+
+# Combine the current prompt and the suggestion
+new_prompt="$current_prompt
+
+Consider the following suggestion for improvement:
+$prompt_suggestion
+
+Please incorporate these suggestions while maintaining the core functionality and purpose of the program." |cgpt -s 'output a new <prompt> with the applied suggestions, we are trying to move this prompt the right way' |tee /tmp/.mkprogquine
+
+# Update the prompt, get the <prompt> to </prompt> contents:
+cat /tmp/.mkprogquine | sed -n '/<prompt>/,/<\/prompt>/p' | sed '1d;$d' > prompt

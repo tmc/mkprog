@@ -1,0 +1,4 @@
+mkprog mkprog "$(cat prompt-${1})"
+rm -r mkprog-${1}
+mv mkprog mkprog-${1}
+cp prompt-${1} ./mkprog-${1}
