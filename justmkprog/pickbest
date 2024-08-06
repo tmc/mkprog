@@ -1,13 +1,40 @@
 #!/bin/bash
+# Function to compare files and select the best one
+compare_files() {
+    local files=("$@")
+    local best_file=""
+    local last_comparison=""
+    local comparison_output=""
+    # Create a temporary file for the comparison output
+    comparison_output=$(mktemp)
+    # Prepare the input for cgpt
+    {
+        echo "Compare the following files and select the best one:"
+        for file in "${files[@]}"; do
+            echo "File: $file"
+            echo "Content:"
+            cat "$file"
+            echo
+        done
+        echo "Provide your analysis and selection in the following format:"
+        echo "<best>path/to/best prompt-file</best>"
+        echo "<last-comparison>path/to/last/comparison/file</last-comparison>"
+    } | cgpt > "$comparison_output"
+    # Extract the best file and last comparison from the output
+    best_file=$(grep -E '<best>.*</best>' "$comparison_output" | sed -E 's/<best>(.*)<\/best>/\1/')
+    last_comparison=$(grep -E '<last-comparison>.*</last-comparison>' "$comparison_output" | sed -E 's/<last-comparison>(.*)<\/last-comparison>/\1/')
+    last_prompt_suggestion=$(grep -E '<prompt-suggestion>.*</prompt-suggestion>' "$comparison_output" | sed -E 's/<prompt-suggestion>(.*)<\/prompt-suggestion>/\1/')
+    # Copy the best file to ./prompt
+    # get teh index from the best comparison (comparison-<index>)
+    index=$(echo "$best_file" | sed -E 's/comparison-([0-9]+).*/\1/')
+    cp "prompt-$index" ./prompt
+    # extract prompt suggestion from the best comparison
+    cat "comparison-$index" | grep -E '<prompt-suggestion>.*</prompt-suggestion>' | sed -E 's/<prompt-suggestion>(.*)<\/prompt-suggestion>/\1/' > ./prompt-suggestion.txt
+    # Clean up the temporary file
+    rm "$comparison_output"
+}
+# Get all comparison files
+comparison_files=(comparison-*)
+# Call the compare_files function with all comparison files
+compare_files "${comparison_files[@]}"
 
-# Get the latest comparison file
-latest_comparison=$(ls -t comparison-* | head -n 1)
-
-# Extract the comparison and prompt suggestion
-comparison=$(sed -n '/<comparison>/,/<\/comparison>/p' "$latest_comparison" | sed '1d;$d')
-prompt_suggestion=$(sed -n '/<prompt-suggestion>/,/<\/prompt-suggestion>/p' "$latest_comparison" | sed '1d;$d')
-
-# Display the comparison
-echo "Latest comparison:"
-echo "$comparison"
-echo

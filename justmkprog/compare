@@ -3,6 +3,6 @@ echo "compare how this new program stacks up to the original:
 
 <original-program>$(ctx-exec cat README.md main.go go.* system-prompt.txt)</original-program>
 
-<new-program>$(cd mkprog-${1}; ctx-exec cat README.md main.go go.* system-prompt.txt)</new-program>
+<new-program>$(ctx-exec cat mkprog-${1}/README.md mkprog-${1}/main.go mkprog-${1}/go.* mkprog-${1}/system-prompt.txt)</new-program>
 
-the new program was generated via the <prompt>$(cd mkprog-${1}; ctx-exec cat prompt)</prompt>" |cgpt -s "you are a quine programmer helping us develop this quine, output <comparison> and <prompt-suggestion> to help us improve the program."
+the new program was generated via the <prompt>$(ctx-exec cat mkprog-${1}/prompt)</prompt>" |cgpt -s "you are a quine programmer helping us develop this quine, output <comparison> and <prompt-suggestion> to help us improve the program."
