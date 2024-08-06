@@ -1,0 +1,25 @@
+<prompt-suggestion>
+To further improve the program, consider the following suggestions:
+
+1. Add support for custom templates: Allow users to provide their own system prompt or templates for generated files.
+
+2. Implement concurrent file writing: Use goroutines to write multiple files simultaneously for improved performance.
+
+3. Add a dry-run option: Allow users to preview the generated content without actually creating files.
+
+4. Implement a progress indicator: Show a progress bar or spinner during content generation for better user experience.
+
+5. Add support for different AI models: Allow users to choose between different language models (e.g., OpenAI, Cohere) in addition to Anthropic.
+
+6. Implement caching: Store previously generated content to speed up repeated requests.
+
+7. Add unit tests: Implement comprehensive unit tests to ensure program reliability and ease future maintenance.
+
+8. Support for project templates: Allow users to specify a project template (e.g., CLI tool, web server, library) to guide the generation process.
+
+9. Implement a config file: Allow users to set default values for flags in a configuration file.
+
+10. Add a feature to update existing projects: Implement functionality to modify or extend existing Go projects based on new descriptions.
+
+These enhancements would make the program even more powerful and flexible for generating Go projects.
+</prompt-suggestion>

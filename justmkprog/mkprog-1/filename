@@ -1,0 +1,17 @@
+(file contents)
+
+Ensure all imports are used and all types are correctly referenced from the langchaingo library. The import section should look similar to this (note the underscore import for embed):
+
+    import (
+        "context"
+        _ "embed"
+        "fmt"
+        // other necessary imports
+        "github.com/tmc/langchaingo/llms"
+        "github.com/tmc/langchaingo/llms/anthropic"
+    )
+
+The generated program should be fully functional, well-structured, and adhere to Go best practices. It should be ready to run without any additional modifications or formatting changes.
+
+Follow unix philosophy and do not output more than necessary.
+
