@@ -1,69 +1,62 @@
 # mkprog
 
-mkprog is a Go program that generates structured content based on user input using the langchaingo library to interact with AI language models. It accepts a program name and description as input and generates a complete Go project including main.go, go.mod, README.md, and other necessary files.
+mkprog is a CLI tool that generates a complete Go project structure based on a user-provided description. It uses the Anthropic API (or other selected AI models) to generate code and documentation for the project.
 
 ## Features
 
-- Uses the Anthropic language model via the langchaingo library
-- Implements error handling and follows Go best practices
-- Supports custom temperature settings for AI generation
-- Optional goimports execution on generated Go files
-- Streaming output for generated content
-- Verbose logging option
-- Configurable input and output options
+- Generate a complete Go project structure
+- Use AI to create code and documentation
+- Support for multiple AI models (Anthropic, OpenAI, Cohere)
+- Custom project templates (CLI tool, web server, library)
+- Concurrent file generation for improved performance
+- Dry-run option to preview generated content
+- Configuration file support for default values
+- Progress indicator during content generation
+- Caching system for previously generated content
+- Comprehensive error handling and logging
 
 ## Installation
 
-1. Ensure you have Go 1.21 or later installed on your system.
-2. Clone this repository:
-   ```
-   git clone https://github.com/yourusername/mkprog.git
-   ```
-3. Change to the project directory:
-   ```
-   cd mkprog
-   ```
-4. Build the program:
-   ```
-   go build
-   ```
+To install mkprog, use the following command:
+
+```
+go install github.com/yourusername/mkprog@latest
+```
 
 ## Usage
 
 ```
-./mkprog [flags] "program-name program-description"
+mkprog [flags] <project description>
 ```
 
 ### Flags
 
-- `-temperature float`: Temperature for AI generation (default 0.1)
-- `-max-tokens int`: Maximum number of tokens for AI generation (default 8192)
-- `-verbose`: Enable verbose logging
-- `-f string`: Input file (use '-' for stdin) (default "-")
-- `-o string`: Output directory for generated files
-- `-goimports`: Run goimports on generated Go files
+- `-o, --output`: Output directory for the generated project
+- `-k, --api-key`: API key for the selected AI model
+- `-t, --template`: Custom template file
+- `-d, --dry-run`: Preview generated content without creating files
+- `-m, --ai-model`: AI model to use (anthropic, openai, cohere)
+- `-p, --project-type`: Project template (cli, web, library)
+- `-v, --verbose`: Enable verbose output
+- `--temperature`: AI model temperature (0.0 - 1.0)
+- `--max-tokens`: Maximum number of tokens for AI response
 
-### Examples
+### Example
 
-1. Generate a program with default settings:
-   ```
-   ./mkprog "hello-world A simple Hello World program in Go"
-   ```
+```
+mkprog -o ./my-project -k your-api-key -m anthropic -p cli "Create a CLI tool that converts markdown to HTML"
+```
 
-2. Generate a program with custom temperature and output directory:
-   ```
-   ./mkprog -temperature 0.2 -o ./output "webserver A basic HTTP server in Go"
-   ```
+## Configuration
 
-3. Generate a program from an input file and run goimports:
-   ```
-   ./mkprog -f input.txt -goimports -o ./output
-   ```
+You can create a configuration file named `.mkprog.yaml` in your home directory to set default values for flags. For example:
 
-4. Use verbose logging and custom max tokens:
-   ```
-   ./mkprog -verbose -max-tokens 4000 "calculator A command-line calculator in Go"
-   ```
+```yaml
+output: ./projects
+api-key: your-default-api-key
+ai-model: anthropic
+project-type: cli
+```
 
 ## License
 

@@ -1,15 +1,18 @@
 # mkprog
 
-mkprog is a Go program that generates structured content based on user input using the langchaingo library to interact with AI language models. It accepts a program name and description as input and generates a complete Go project including main.go, go.mod, README.md, and other necessary files.
+mkprog is a Go program that generates a complete Go project structure based on a user-provided description. It uses the Anthropic API to generate code and documentation for the project.
 
 ## Features
 
-- Uses the Anthropic language model via the langchaingo library
-- Implements error handling and follows Go best practices
-- Supports custom temperature settings for AI generation
-- Optional goimports execution on generated Go files
-- Streaming output for generated content
-- Verbose logging option
+- Accepts command-line arguments for project configuration
+- Implements a configuration file system to store default values
+- Creates a complete project structure with main package, additional packages, test files, README.md, and go.mod
+- Uses the Anthropic API to generate code, documentation, and README content
+- Implements concurrent file writing for improved performance
+- Includes a progress indicator during content generation
+- Supports a dry-run option to preview generated content
+- Handles errors gracefully and provides informative error messages
+- Implements proper logging for debugging and monitoring
 
 ## Installation
 
@@ -30,25 +33,35 @@ mkprog is a Go program that generates structured content based on user input usi
 ## Usage
 
 ```
-./mkprog [flags] <program-name> <program-description>
+mkprog [flags] [project description]
 ```
 
 ### Flags
 
-- `-temp float`: Temperature for AI generation (default 0.1)
-- `-max-tokens int`: Maximum number of tokens for AI generation (default 8192)
-- `-verbose`: Enable verbose logging
-- `-f string`: Input file (use '-' for stdin)
-- `-o string`: Output directory for generated files
-- `-goimports`: Run goimports on generated Go files
+- `-o, --output string`: Output directory for the generated project (required)
+- `-k, --api-key string`: API key for the AI service (required)
+- `-t, --template string`: Custom template file (optional)
+- `-d, --dry-run`: Preview generated content without creating files
+- `-m, --ai-model string`: AI model to use (anthropic, openai, cohere) (default "anthropic")
+- `-p, --project-type string`: Project template (cli, web, library) (default "cli")
 
 ### Example
 
 ```
-./mkprog -o output -verbose myprogram "A program that does something amazing"
+mkprog -o ./my-project -k your-api-key -p web "Create a simple web server that serves a REST API for a todo list application"
 ```
 
-This command will generate a new Go project for a program named "myprogram" with the description "A program that does something amazing". The generated files will be placed in the "output" directory, and verbose logging will be enabled.
+## Configuration
+
+You can create a configuration file named `mkprog.yaml` in either `$HOME/.config/mkprog/` or the current directory. The configuration file can store default values for the command-line flags.
+
+Example `mkprog.yaml`:
+
+```yaml
+api-key: your-default-api-key
+ai-model: anthropic
+project-type: cli
+```
 
 ## License
 

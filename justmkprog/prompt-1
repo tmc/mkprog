@@ -1,1 +1,44 @@
-mkprog mkprog "A Go program that generates structured content based on user input using the langchaingo library to interact with AI language models. The program should accept a program name and description as input, and generate a complete Go project including main.go, go.mod, README.md, and other necessary files. It should use the anthropic language model, implement error handling, follow Go best practices, and include features like custom temperature settings and optional goimports execution."
+mkprog mkprog "Create a Go program that generates a complete Go project structure based on a user-provided description. The program should use the Anthropic API to generate code and documentation for the project. Here's an outline of the desired functionality:
+
+1. Accept command-line arguments for:
+   - Project description
+   - Output directory
+   - API key
+   - Custom template file (optional)
+   - Dry-run flag
+   - AI model selection (e.g., Anthropic, OpenAI, Cohere)
+   - Project template (e.g., CLI tool, web server, library)
+
+2. Implement a configuration file system to store default values for flags.
+
+3. Create a project structure with:
+   - Main package
+   - Additional packages as needed
+   - Test files
+   - README.md
+   - go.mod file
+
+4. Use the Anthropic API (or selected AI model) to generate:
+   - Code for each file
+   - Function and package documentation
+   - README content
+
+5. Implement concurrent file writing using goroutines for improved performance.
+
+6. Add a progress indicator (e.g., spinner or progress bar) during content generation.
+
+7. Implement a caching system to store and reuse previously generated content.
+
+8. Add comprehensive unit tests for the program.
+
+9. Implement a dry-run option to preview generated content without creating files.
+
+10. Add functionality to update existing Go projects based on new descriptions.
+
+11. Use custom templates if provided, otherwise use default templates.
+
+12. Handle errors gracefully and provide informative error messages.
+
+13. Implement proper logging for debugging and monitoring.
+
+The program should be well-structured, following Go best practices and idiomatic Go programming. It should be easy to use, maintain, and extend in the future."

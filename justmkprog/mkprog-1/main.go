@@ -1,18 +1,18 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	_ "embed"
-	"flag"
+	"encoding/json"
 	"fmt"
-	"io"
-	"log"
+	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
+	"sync"
+	"time"
 
+	"github.com/briandowns/spinner"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/anthropic"
 )
@@ -20,162 +20,198 @@ import (
 //go:embed system-prompt.txt
 var systemPrompt string
 
+type Config struct {
+	APIKey          string
+	OutputDir       string
+	CustomTemplate  string
+	DryRun          bool
+	AIModel         string
+	ProjectTemplate string
+}
+
+type FileContent struct {
+	Name    string
+	Content string
+}
+
+var (
+	config Config
+	cache  = make(map[string]string)
+	mutex  = &sync.Mutex{}
+)
+
 func main() {
 	if err := run(); err != nil {
-		log.Fatalf("Error: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 }
 
 func run() error {
-	var (
-		temperature  = flag.Float64("temp", 0.1, "Temperature for AI generation")
-		maxTokens    = flag.Int("max-tokens", 8192, "Maximum number of tokens for AI generation")
-		verbose      = flag.Bool("verbose", false, "Enable verbose logging")
-		inputFile    = flag.String("f", "-", "Input file (use '-' for stdin)")
-		outputDir    = flag.String("o", "", "Output directory for generated files")
-		runGoimports = flag.Bool("goimports", false, "Run goimports on generated Go files")
-	)
-	flag.Parse()
-
-	if flag.NArg() < 2 {
-		return fmt.Errorf("usage: %s [flags] <program-name> <program-description>", os.Args[0])
+	rootCmd := &cobra.Command{
+		Use:   "mkprog [project description]",
+		Short: "Generate a Go project structure based on a description",
+		Long:  `mkprog is a tool that generates a complete Go project structure based on a user-provided description using AI-powered code generation.`,
+		Args:  cobra.ExactArgs(1),
+		RunE:  runGenerator,
 	}
 
-	programName := flag.Arg(0)
-	programDesc := flag.Arg(1)
+	rootCmd.Flags().StringVarP(&config.OutputDir, "output", "o", "", "Output directory for the generated project")
+	rootCmd.Flags().StringVarP(&config.APIKey, "api-key", "k", "", "API key for the AI service")
+	rootCmd.Flags().StringVarP(&config.CustomTemplate, "template", "t", "", "Custom template file")
+	rootCmd.Flags().BoolVarP(&config.DryRun, "dry-run", "d", false, "Preview generated content without creating files")
+	rootCmd.Flags().StringVarP(&config.AIModel, "ai-model", "m", "anthropic", "AI model to use (anthropic, openai, cohere)")
+	rootCmd.Flags().StringVarP(&config.ProjectTemplate, "project-type", "p", "cli", "Project template (cli, web, library)")
 
-	input, err := readInput(*inputFile)
-	if err != nil {
-		return fmt.Errorf("failed to read input: %w", err)
+	viper.SetConfigName("mkprog")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath("$HOME/.config/mkprog")
+	viper.AddConfigPath(".")
+
+	if err := viper.ReadInConfig(); err == nil {
+		fmt.Println("Using config file:", viper.ConfigFileUsed())
 	}
 
-	ctx := context.Background()
-	client, err := anthropic.New(anthropic.WithAnthropicBetaHeader(anthropic.MaxTokensAnthropicSonnet35))
-	if err != nil {
-		return fmt.Errorf("failed to create Anthropic client: %w", err)
+	viper.AutomaticEnv()
+	viper.SetEnvPrefix("MKPROG")
+
+	if err := viper.BindPFlags(rootCmd.Flags()); err != nil {
+		return err
 	}
 
-	if *verbose {
-		log.Printf("Generating content for program: %s\nDescription: %s", programName, programDesc)
-	}
-
-	userInput := fmt.Sprintf("%s %q", programName, programDesc)
-	messages := []llms.MessageContent{
-		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
-		llms.TextParts(llms.ChatMessageTypeHuman, userInput),
-	}
-
-	resp, err := client.GenerateContent(ctx, messages,
-		llms.WithTemperature(*temperature),
-		llms.WithMaxTokens(*maxTokens),
-		llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
-			fmt.Print(string(chunk))
-			return nil
-		}),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to generate content: %w", err)
-	}
-
-	if *verbose {
-		log.Println("Content generation completed")
-	}
-
-	if *outputDir != "" {
-		if err := os.MkdirAll(*outputDir, 0755); err != nil {
-			return fmt.Errorf("failed to create output directory: %w", err)
-		}
-		if err := writeFiles(*outputDir, resp.Choices[0].Content, *runGoimports); err != nil {
-			return fmt.Errorf("failed to write files: %w", err)
-		}
-		if *verbose {
-			log.Printf("Files written to %s", *outputDir)
-		}
-	}
-
-	return nil
+	return rootCmd.Execute()
 }
 
-func readInput(filename string) (string, error) {
-	var reader io.Reader
-	if filename == "-" {
-		reader = os.Stdin
-	} else {
-		file, err := os.Open(filename)
-		if err != nil {
-			return "", err
-		}
-		defer file.Close()
-		reader = file
+func runGenerator(cmd *cobra.Command, args []string) error {
+	projectDescription := args[0]
+
+	if config.OutputDir == "" {
+		return fmt.Errorf("output directory is required")
 	}
-	input, err := io.ReadAll(reader)
+
+	if config.APIKey == "" {
+		return fmt.Errorf("API key is required")
+	}
+
+	if err := os.MkdirAll(config.OutputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	s := spinner.New(spinner.CharSets[9], 100*time.Millisecond)
+	s.Suffix = " Generating project structure..."
+	s.Start()
+
+	files, err := generateProjectStructure(projectDescription)
 	if err != nil {
-		return "", err
+		s.Stop()
+		return fmt.Errorf("failed to generate project structure: %w", err)
 	}
-	return string(input), nil
-}
 
-func writeFiles(outputDir, content string, runGoimports bool) error {
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	var currentFile *os.File
-	var currentFileName string
+	s.Stop()
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "=== ") && strings.HasSuffix(line, " ===") {
-			if currentFile != nil {
-				currentFile.Close()
+	if config.DryRun {
+		fmt.Println("Dry run: Generated files:")
+		for _, file := range files {
+			fmt.Printf("=== %s ===\n%s\n\n", file.Name, file.Content)
+		}
+		return nil
+	}
+
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(files))
+
+	for _, file := range files {
+		wg.Add(1)
+		go func(f FileContent) {
+			defer wg.Done()
+			if err := writeFile(f.Name, f.Content); err != nil {
+				errChan <- fmt.Errorf("failed to write file %s: %w", f.Name, err)
 			}
-			currentFileName = strings.TrimSuffix(strings.TrimPrefix(line, "=== "), " ===")
-			filePath := filepath.Join(outputDir, currentFileName)
-			var err error
-			currentFile, err = os.Create(filePath)
-			if err != nil {
-				return fmt.Errorf("failed to create file %s: %w", filePath, err)
-			}
-		} else if currentFile != nil {
-			fmt.Fprintln(currentFile, line)
-		}
+		}(file)
 	}
 
-	if currentFile != nil {
-		currentFile.Close()
-	}
+	wg.Wait()
+	close(errChan)
 
-	if runGoimports {
-		if err := runGoimportsOnFiles(outputDir); err != nil {
-			return fmt.Errorf("failed to run goimports: %w", err)
-		}
-	}
-
-	return nil
-}
-
-func runGoimportsOnFiles(dir string) error {
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	for err := range errChan {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && strings.HasSuffix(path, ".go") {
-			cmd := exec.Command("goimports", "-w", path)
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("goimports failed on %s: %w", path, err)
-			}
-		}
-		return nil
-	})
+	}
+
+	fmt.Println("Project generated successfully!")
+	return nil
+}
+
+func generateProjectStructure(description string) ([]FileContent, error) {
+	ctx := context.Background()
+	client, err := anthropic.New(anthropic.WithAPIKey(config.APIKey))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Anthropic client: %w", err)
+	}
+
+	prompt := fmt.Sprintf(`%s
+
+Project Description: %s
+Project Template: %s
+
+Generate a complete Go project structure based on the given description and template. Provide the content for each file, including:
+
+1. main.go
+2. Additional package files
+3. Test files
+4. README.md
+5. go.mod
+
+Output the result as a JSON array of objects, where each object has "Name" and "Content" fields representing the file name and its content, respectively.`, systemPrompt, description, config.ProjectTemplate)
+
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
+		llms.TextParts(llms.ChatMessageTypeHuman, prompt),
+	}
+
+	resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(0.1), llms.WithMaxTokens(8000), anthropic.WithAnthropicBetaHeader(anthropic.MaxTokensAnthropicSonnet35))
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate content: %w", err)
+	}
+
+	var files []FileContent
+	if err := json.Unmarshal([]byte(resp.Content), &files); err != nil {
+		return nil, fmt.Errorf("failed to parse generated content: %w", err)
+	}
+
+	return files, nil
+}
+
+func writeFile(name, content string) error {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	filePath := filepath.Join(config.OutputDir, name)
+	dir := filepath.Dir(filePath)
+
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
+	return ioutil.WriteFile(filePath, []byte(content), 0644)
+}
+
+func init() {
+	if os.Getenv("_MKPROG_DUMP") != "" {
+		dumpsrc()
+		os.Exit(0)
+	}
 }
 
 func dumpsrc() {
-	if os.Getenv("_MKPROG_DUMP") != "" {
-		fmt.Println("=== main.go ===")
-		data, _ := os.ReadFile("main.go")
-		fmt.Println(string(data))
-		fmt.Println("=== go.mod ===")
-		data, _ = os.ReadFile("go.mod")
-		fmt.Println(string(data))
-		fmt.Println("=== system-prompt.txt ===")
-		data, _ = os.ReadFile("system-prompt.txt")
-		fmt.Println(string(data))
+	files := []string{"main.go", "go.mod", "system-prompt.txt"}
+	for _, file := range files {
+		content, err := ioutil.ReadFile(file)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", file, err)
+			continue
+		}
+		fmt.Printf("=== %s ===\n%s\n\n", file, content)
 	}
 }
