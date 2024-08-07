@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"context"
-	"encoding/json"
+	_ "embed"
 	"fmt"
-	"io/ioutil"
+	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,178 +20,227 @@ import (
 	"github.com/tmc/langchaingo/llms/anthropic"
 )
 
-var (
-	cfgFile      string
-	projectDesc  string
-	outputDir    string
-	apiKey       string
-	templateFile string
-	dryRun       bool
-	aiModel      string
-	projectType  string
-	verbose      bool
-	temperature  float64
-	maxTokens    int
-)
+//go:embed system-prompt.txt
+var systemPrompt string
 
-var rootCmd = &cobra.Command{
-	Use:   "mkprog",
-	Short: "Generate a complete Go project structure",
-	Long: `mkprog is a CLI tool that generates a complete Go project structure based on a user-provided description.
-It uses AI models to generate code and documentation for the project.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := run(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-	},
+type config struct {
+	Description    string
+	OutputDir      string
+	APIKey         string
+	TemplateFile   string
+	DryRun         bool
+	AIModel        string
+	ProjectType    string
+	Temperature    float64
+	MaxTokens      int
+	Verbose        bool
+	Interactive    bool
+	InitGit        bool
+	GenerateDocker bool
 }
 
-func init() {
-	cobra.OnInitialize(initConfig)
-
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.mkprog.yaml)")
-	rootCmd.Flags().StringVarP(&projectDesc, "description", "d", "", "Project description")
-	rootCmd.Flags().StringVarP(&outputDir, "output", "o", "", "Output directory")
-	rootCmd.Flags().StringVarP(&apiKey, "api-key", "k", "", "API key for AI model")
-	rootCmd.Flags().StringVarP(&templateFile, "template", "t", "", "Custom template file")
-	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Dry run (preview generated content)")
-	rootCmd.Flags().StringVarP(&aiModel, "ai-model", "m", "anthropic", "AI model to use (anthropic, openai, cohere)")
-	rootCmd.Flags().StringVarP(&projectType, "project-type", "p", "cli", "Project template (cli, web, library)")
-	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
-	rootCmd.Flags().Float64VarP(&temperature, "temperature", "", 0.1, "AI model temperature")
-	rootCmd.Flags().IntVarP(&maxTokens, "max-tokens", "", 8192, "Maximum number of tokens for AI response")
-
-	viper.BindPFlag("description", rootCmd.Flags().Lookup("description"))
-	viper.BindPFlag("output", rootCmd.Flags().Lookup("output"))
-	viper.BindPFlag("api-key", rootCmd.Flags().Lookup("api-key"))
-	viper.BindPFlag("template", rootCmd.Flags().Lookup("template"))
-	viper.BindPFlag("dry-run", rootCmd.Flags().Lookup("dry-run"))
-	viper.BindPFlag("ai-model", rootCmd.Flags().Lookup("ai-model"))
-	viper.BindPFlag("project-type", rootCmd.Flags().Lookup("project-type"))
-	viper.BindPFlag("verbose", rootCmd.Flags().Lookup("verbose"))
-	viper.BindPFlag("temperature", rootCmd.Flags().Lookup("temperature"))
-	viper.BindPFlag("max-tokens", rootCmd.Flags().Lookup("max-tokens"))
-}
-
-func initConfig() {
-	if cfgFile != "" {
-		viper.SetConfigFile(cfgFile)
-	} else {
-		home, err := os.UserHomeDir()
-		cobra.CheckErr(err)
-
-		viper.AddConfigPath(home)
-		viper.SetConfigType("yaml")
-		viper.SetConfigName(".mkprog")
-	}
-
-	viper.AutomaticEnv()
-
-	if err := viper.ReadInConfig(); err == nil {
-		fmt.Println("Using config file:", viper.ConfigFileUsed())
-	}
-}
+var cfg config
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+	if err := run(); err != nil {
+		log.Fatalf("Error: %v", err)
 	}
 }
 
 func run() error {
-	if projectDesc == "" {
-		return fmt.Errorf("project description is required")
+	rootCmd := &cobra.Command{
+		Use:   "mkprog [flags] <project description>",
+		Short: "Generate a Go project structure based on a description",
+		Long:  `mkprog is a tool that generates a complete Go project structure based on a user-provided description using AI-powered code generation.`,
+		Args:  cobra.ExactArgs(1),
+		RunE:  runGenerate,
 	}
 
-	if outputDir == "" {
+	rootCmd.Flags().StringVarP(&cfg.OutputDir, "output", "o", "", "Output directory for the generated project")
+	rootCmd.Flags().StringVarP(&cfg.APIKey, "api-key", "k", "", "API key for the AI service")
+	rootCmd.Flags().StringVarP(&cfg.TemplateFile, "template", "t", "", "Custom template file")
+	rootCmd.Flags().BoolVarP(&cfg.DryRun, "dry-run", "d", false, "Perform a dry run without creating files")
+	rootCmd.Flags().StringVarP(&cfg.AIModel, "ai-model", "m", "anthropic", "AI model to use (anthropic, openai, cohere)")
+	rootCmd.Flags().StringVarP(&cfg.ProjectType, "project-type", "p", "cli", "Project template (cli, web, library)")
+	rootCmd.Flags().Float64VarP(&cfg.Temperature, "temperature", "", 0.1, "AI model temperature")
+	rootCmd.Flags().IntVarP(&cfg.MaxTokens, "max-tokens", "", 8192, "Maximum number of tokens for AI response")
+	rootCmd.Flags().BoolVarP(&cfg.Verbose, "verbose", "v", false, "Enable verbose logging")
+	rootCmd.Flags().BoolVarP(&cfg.Interactive, "interactive", "i", false, "Enable interactive mode")
+	rootCmd.Flags().BoolVar(&cfg.InitGit, "init-git", false, "Initialize Git repository")
+	rootCmd.Flags().BoolVar(&cfg.GenerateDocker, "generate-docker", false, "Generate Dockerfile and docker-compose.yml")
+
+	viper.SetConfigName("mkprog")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath("$HOME/.config/mkprog")
+	viper.AddConfigPath(".")
+
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return fmt.Errorf("error reading config file: %w", err)
+		}
+	}
+
+	viper.AutomaticEnv()
+	viper.SetEnvPrefix("MKPROG")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+
+	if err := viper.BindPFlags(rootCmd.Flags()); err != nil {
+		return fmt.Errorf("error binding flags: %w", err)
+	}
+
+	if err := rootCmd.Execute(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func runGenerate(cmd *cobra.Command, args []string) error {
+	cfg.Description = args[0]
+
+	if cfg.Verbose {
+		log.Println("Configuration:")
+		log.Printf("Description: %s", cfg.Description)
+		log.Printf("Output Directory: %s", cfg.OutputDir)
+		log.Printf("AI Model: %s", cfg.AIModel)
+		log.Printf("Project Type: %s", cfg.ProjectType)
+		log.Printf("Dry Run: %v", cfg.DryRun)
+		log.Printf("Interactive: %v", cfg.Interactive)
+		log.Printf("Init Git: %v", cfg.InitGit)
+		log.Printf("Generate Docker: %v", cfg.GenerateDocker)
+	}
+
+	if cfg.Interactive {
+		if err := runInteractiveMode(); err != nil {
+			return fmt.Errorf("error in interactive mode: %w", err)
+		}
+	}
+
+	if cfg.OutputDir == "" {
 		return fmt.Errorf("output directory is required")
 	}
 
-	if apiKey == "" {
+	if cfg.APIKey == "" {
 		return fmt.Errorf("API key is required")
 	}
 
-	client, err := anthropic.New(anthropic.WithApiKey(apiKey), anthropic.WithAnthropicBetaHeader(anthropic.MaxTokensAnthropicSonnet35))
+	client, err := anthropic.New(anthropic.WithApiKey(cfg.APIKey))
 	if err != nil {
-		return fmt.Errorf("failed to create Anthropic client: %w", err)
+		return fmt.Errorf("error creating Anthropic client: %w", err)
 	}
 
-	s := spinner.New(spinner.CharSets[9], 100*time.Millisecond)
+	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
 	s.Suffix = " Generating project structure..."
 	s.Start()
 
 	projectStructure, err := generateProjectStructure(client)
 	if err != nil {
 		s.Stop()
-		return fmt.Errorf("failed to generate project structure: %w", err)
+		return fmt.Errorf("error generating project structure: %w", err)
 	}
 
 	s.Stop()
 
-	if dryRun {
-		fmt.Println("Dry run: Generated project structure")
-		fmt.Printf("%+v\n", projectStructure)
+	if cfg.DryRun {
+		fmt.Println("Dry run: Project structure")
+		fmt.Println(projectStructure)
 		return nil
 	}
 
 	if err := createProjectFiles(projectStructure); err != nil {
-		return fmt.Errorf("failed to create project files: %w", err)
+		return fmt.Errorf("error creating project files: %w", err)
+	}
+
+	if cfg.InitGit {
+		if err := initGitRepository(); err != nil {
+			return fmt.Errorf("error initializing Git repository: %w", err)
+		}
+	}
+
+	if cfg.GenerateDocker {
+		if err := generateDockerFiles(client); err != nil {
+			return fmt.Errorf("error generating Docker files: %w", err)
+		}
 	}
 
 	fmt.Println("Project generated successfully!")
 	return nil
 }
 
-func generateProjectStructure(client llms.Model) (map[string]string, error) {
+func generateProjectStructure(client llms.Model) (string, error) {
 	ctx := context.Background()
 
-	systemPrompt := fmt.Sprintf(`You are an AI assistant specialized in creating Go project structures. Generate a complete project structure for a Go project based on the following description:
+	prompt := fmt.Sprintf(`%s
 
-Description: %s
-
+Project Description: %s
 Project Type: %s
 
-Include the following files and directories:
-1. main.go (if applicable)
-2. Additional package directories and files
-3. Test files for each package
-4. README.md
-5. go.mod
+Generate a complete Go project structure based on the above description and project type. Include the following:
 
-Provide the content for each file as a JSON object where the keys are file paths and the values are the file contents.`, projectDesc, projectType)
+1. Main package with necessary files
+2. Additional packages as needed
+3. Test files for each package
+4. README.md content
+5. go.mod file content
+
+Provide the content for each file, separated by file paths. Use the following format:
+
+===file:path/to/file.go===
+(file content here)
+===endfile===
+
+Ensure that the generated code follows Go best practices and includes proper documentation.`, systemPrompt, cfg.Description, cfg.ProjectType)
 
 	messages := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
-		llms.TextParts(llms.ChatMessageTypeHuman, "Generate the project structure and file contents."),
+		llms.TextParts(llms.ChatMessageTypeHuman, prompt),
 	}
 
-	resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(temperature), llms.WithMaxTokens(maxTokens))
+	resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(cfg.Temperature), llms.WithMaxTokens(cfg.MaxTokens))
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate content: %w", err)
+		return "", fmt.Errorf("error generating content: %w", err)
 	}
 
-	var projectStructure map[string]string
-	if err := json.Unmarshal([]byte(resp.Choices[0].Content), &projectStructure); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal project structure: %w", err)
-	}
-
-	return projectStructure, nil
+	return resp.Choices[0].Content, nil
 }
 
-func createProjectFiles(projectStructure map[string]string) error {
-	var wg sync.WaitGroup
-	errChan := make(chan error, len(projectStructure))
+func createProjectFiles(projectStructure string) error {
+	files := strings.Split(projectStructure, "===file:")
 
-	for filePath, content := range projectStructure {
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(files))
+
+	for _, file := range files[1:] {
 		wg.Add(1)
-		go func(fp, c string) {
+		go func(fileContent string) {
 			defer wg.Done()
-			if err := writeFile(fp, c); err != nil {
-				errChan <- fmt.Errorf("failed to write file %s: %w", fp, err)
+
+			parts := strings.SplitN(fileContent, "===", 2)
+			if len(parts) != 2 {
+				errChan <- fmt.Errorf("invalid file content format")
+				return
 			}
-		}(filePath, content)
+
+			filePath := strings.TrimSpace(parts[0])
+			content := strings.TrimSpace(strings.TrimSuffix(parts[1], "endfile==="))
+
+			fullPath := filepath.Join(cfg.OutputDir, filePath)
+			dir := filepath.Dir(fullPath)
+
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				errChan <- fmt.Errorf("error creating directory %s: %w", dir, err)
+				return
+			}
+
+			if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+				errChan <- fmt.Errorf("error writing file %s: %w", fullPath, err)
+				return
+			}
+
+			if cfg.Verbose {
+				log.Printf("Created file: %s", fullPath)
+			}
+		}(file)
 	}
 
 	wg.Wait()
@@ -203,20 +255,82 @@ func createProjectFiles(projectStructure map[string]string) error {
 	return nil
 }
 
-func writeFile(filePath, content string) error {
-	fullPath := filepath.Join(outputDir, filePath)
-	dir := filepath.Dir(fullPath)
+func runInteractiveMode() error {
+	reader := bufio.NewReader(os.Stdin)
 
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	fmt.Print("Enter project description: ")
+	cfg.Description, _ = reader.ReadString('\n')
+	cfg.Description = strings.TrimSpace(cfg.Description)
+
+	fmt.Print("Enter output directory: ")
+	cfg.OutputDir, _ = reader.ReadString('\n')
+	cfg.OutputDir = strings.TrimSpace(cfg.OutputDir)
+
+	fmt.Print("Enter project type (cli, web, library): ")
+	cfg.ProjectType, _ = reader.ReadString('\n')
+	cfg.ProjectType = strings.TrimSpace(cfg.ProjectType)
+
+	fmt.Print("Initialize Git repository? (y/n): ")
+	initGit, _ := reader.ReadString('\n')
+	cfg.InitGit = strings.ToLower(strings.TrimSpace(initGit)) == "y"
+
+	fmt.Print("Generate Docker files? (y/n): ")
+	genDocker, _ := reader.ReadString('\n')
+	cfg.GenerateDocker = strings.ToLower(strings.TrimSpace(genDocker)) == "y"
+
+	return nil
+}
+
+func initGitRepository() error {
+	cmd := exec.Command("git", "init")
+	cmd.Dir = cfg.OutputDir
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("error initializing Git repository: %w", err)
 	}
 
-	if err := ioutil.WriteFile(fullPath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write file %s: %w", fullPath, err)
+	if cfg.Verbose {
+		log.Println("Initialized Git repository")
 	}
 
-	if verbose {
-		fmt.Printf("Created file: %s\n", fullPath)
+	return nil
+}
+
+func generateDockerFiles(client llms.Model) error {
+	ctx := context.Background()
+
+	prompt := fmt.Sprintf(`Generate Dockerfile and docker-compose.yml files for the following Go project:
+
+Project Description: %s
+Project Type: %s
+
+Provide the content for each file, separated by file paths. Use the following format:
+
+===file:Dockerfile===
+(Dockerfile content here)
+===endfile===
+
+===file:docker-compose.yml===
+(docker-compose.yml content here)
+===endfile===
+
+Ensure that the generated files follow best practices for containerizing Go applications.`, cfg.Description, cfg.ProjectType)
+
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
+		llms.TextParts(llms.ChatMessageTypeHuman, prompt),
+	}
+
+	resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(cfg.Temperature), llms.WithMaxTokens(cfg.MaxTokens))
+	if err != nil {
+		return fmt.Errorf("error generating Docker files: %w", err)
+	}
+
+	if err := createProjectFiles(resp.Choices[0].Content); err != nil {
+		return fmt.Errorf("error creating Docker files: %w", err)
+	}
+
+	if cfg.Verbose {
+		log.Println("Generated Dockerfile and docker-compose.yml")
 	}
 
 	return nil
@@ -230,15 +344,15 @@ func init() {
 }
 
 func dumpsrc() {
-	files := []string{"main.go", "go.mod"}
-	for _, file := range files {
-		content, err := ioutil.ReadFile(file)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", file, err)
-			continue
-		}
-		fmt.Printf("=== %s ===\n", file)
-		fmt.Println(string(content))
-		fmt.Println()
-	}
+	fmt.Println("=== main.go ===")
+	data, _ := os.ReadFile("main.go")
+	fmt.Println(string(data))
+
+	fmt.Println("=== go.mod ===")
+	data, _ = os.ReadFile("go.mod")
+	fmt.Println(string(data))
+
+	fmt.Println("=== system-prompt.txt ===")
+	data, _ = os.ReadFile("system-prompt.txt")
+	fmt.Println(string(data))
 }

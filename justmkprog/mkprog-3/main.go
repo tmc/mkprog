@@ -29,6 +29,8 @@ type Config struct {
 	DryRun          bool
 	AIModel         string
 	ProjectTemplate string
+	MaxTokens       int
+	Temperature     float64
 }
 
 type ProjectStructure struct {
@@ -36,61 +38,58 @@ type ProjectStructure struct {
 }
 
 var (
-	config Config
-	cache  = make(map[string]string)
-	mutex  = &sync.Mutex{}
-)
-
-func main() {
-	if err := run(); err != nil {
-		log.Fatalf("Error: %v", err)
-	}
-}
-
-func run() error {
-	rootCmd := &cobra.Command{
+	cfg     Config
+	rootCmd = &cobra.Command{
 		Use:   "mkprog [project description]",
 		Short: "Generate a Go project structure based on a description",
+		Long:  `mkprog is a CLI tool that generates a complete Go project structure based on a user-provided description using AI-powered code generation.`,
 		Args:  cobra.ExactArgs(1),
-		RunE:  generateProject,
+		RunE:  run,
 	}
+)
 
-	rootCmd.Flags().StringVarP(&config.OutputDir, "output", "o", "", "Output directory for the generated project")
-	rootCmd.Flags().StringVarP(&config.APIKey, "api-key", "k", "", "API key for the AI model")
-	rootCmd.Flags().StringVarP(&config.CustomTemplate, "template", "t", "", "Custom template file")
-	rootCmd.Flags().BoolVarP(&config.DryRun, "dry-run", "d", false, "Preview generated content without creating files")
-	rootCmd.Flags().StringVarP(&config.AIModel, "ai-model", "m", "anthropic", "AI model to use (anthropic, openai, cohere)")
-	rootCmd.Flags().StringVarP(&config.ProjectTemplate, "project-type", "p", "cli", "Project template (cli, web, library)")
+func init() {
+	rootCmd.Flags().StringVar(&cfg.APIKey, "api-key", "", "API key for the AI service")
+	rootCmd.Flags().StringVar(&cfg.OutputDir, "output-dir", "", "Output directory for the generated project")
+	rootCmd.Flags().StringVar(&cfg.CustomTemplate, "custom-template", "", "Path to a custom template file")
+	rootCmd.Flags().BoolVar(&cfg.DryRun, "dry-run", false, "Preview generated content without creating files")
+	rootCmd.Flags().StringVar(&cfg.AIModel, "ai-model", "anthropic", "AI model to use (anthropic, openai, cohere)")
+	rootCmd.Flags().StringVar(&cfg.ProjectTemplate, "project-template", "cli", "Project template (cli, web, library)")
+	rootCmd.Flags().IntVar(&cfg.MaxTokens, "max-tokens", 8192, "Maximum number of tokens for AI generation")
+	rootCmd.Flags().Float64Var(&cfg.Temperature, "temperature", 0.1, "Temperature for AI generation")
 
 	viper.SetConfigName("mkprog")
-	viper.AddConfigPath(".")
+	viper.SetConfigType("yaml")
 	viper.AddConfigPath("$HOME/.config/mkprog")
-	viper.AutomaticEnv()
-
+	viper.AddConfigPath(".")
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Println("Using config file:", viper.ConfigFileUsed())
 	}
 
+	viper.AutomaticEnv()
+	viper.SetEnvPrefix("MKPROG")
 	viper.BindPFlags(rootCmd.Flags())
-
-	return rootCmd.Execute()
 }
 
-func generateProject(cmd *cobra.Command, args []string) error {
-	description := args[0]
+func main() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
 
-	if config.APIKey == "" {
-		config.APIKey = os.Getenv("ANTHROPIC_API_KEY")
-		if config.APIKey == "" {
-			return fmt.Errorf("API key not provided and ANTHROPIC_API_KEY environment variable not set")
-		}
+func run(cmd *cobra.Command, args []string) error {
+	projectDescription := args[0]
+
+	if cfg.APIKey == "" {
+		return fmt.Errorf("API key is required")
 	}
 
-	if config.OutputDir == "" {
-		return fmt.Errorf("output directory not specified")
+	if cfg.OutputDir == "" {
+		return fmt.Errorf("output directory is required")
 	}
 
-	client, err := anthropic.New(anthropic.WithAPIKey(config.APIKey))
+	client, err := anthropic.New(anthropic.WithAPIKey(cfg.APIKey), anthropic.WithAnthropicBetaHeader(anthropic.MaxTokensAnthropicSonnet35))
 	if err != nil {
 		return fmt.Errorf("failed to create Anthropic client: %w", err)
 	}
@@ -99,8 +98,7 @@ func generateProject(cmd *cobra.Command, args []string) error {
 	s.Suffix = " Generating project structure..."
 	s.Start()
 
-	ctx := context.Background()
-	projectStructure, err := generateProjectStructure(ctx, client, description)
+	projectStructure, err := generateProjectStructure(client, projectDescription)
 	if err != nil {
 		s.Stop()
 		return fmt.Errorf("failed to generate project structure: %w", err)
@@ -108,7 +106,7 @@ func generateProject(cmd *cobra.Command, args []string) error {
 
 	s.Stop()
 
-	if config.DryRun {
+	if cfg.DryRun {
 		fmt.Println("Dry run: Generated project structure")
 		for filename, content := range projectStructure.Files {
 			fmt.Printf("=== %s ===\n%s\n\n", filename, content)
@@ -120,29 +118,36 @@ func generateProject(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create project files: %w", err)
 	}
 
-	fmt.Printf("Project generated successfully in %s\n", config.OutputDir)
+	fmt.Println("Project generated successfully!")
 	return nil
 }
 
-func generateProjectStructure(ctx context.Context, client llms.Model, description string) (*ProjectStructure, error) {
-	prompt := fmt.Sprintf("%s\n\nProject Description: %s\nProject Type: %s\n\nGenerate a complete project structure with file contents.", systemPrompt, description, config.ProjectTemplate)
+func generateProjectStructure(client llms.Model, description string) (*ProjectStructure, error) {
+	ctx := context.Background()
+
+	prompt := fmt.Sprintf(`%s
+
+Project Description: %s
+
+Generate a complete Go project structure based on the above description. Provide the content for each file in the project, including main.go, additional packages, test files, README.md, and go.mod. The output should be a JSON object with filenames as keys and file contents as values.
+
+Use the following project template: %s
+
+Ensure that the generated code follows Go best practices and includes proper error handling, logging, and documentation.`, systemPrompt, description, cfg.ProjectTemplate)
 
 	messages := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
 		llms.TextParts(llms.ChatMessageTypeHuman, prompt),
 	}
 
-	resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(0.1), llms.WithMaxTokens(8000))
+	resp, err := client.GenerateContent(ctx, messages, llms.WithTemperature(cfg.Temperature), llms.WithMaxTokens(cfg.MaxTokens))
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate content: %w", err)
 	}
 
-	content := resp.Choices[0].Content
-
 	var projectStructure ProjectStructure
-	err = json.Unmarshal([]byte(content), &projectStructure)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse generated content: %w", err)
+	if err := json.Unmarshal([]byte(resp.Choices[0].Content), &projectStructure); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal project structure: %w", err)
 	}
 
 	return &projectStructure, nil
@@ -156,7 +161,7 @@ func createProjectFiles(structure *ProjectStructure) error {
 		wg.Add(1)
 		go func(filename, content string) {
 			defer wg.Done()
-			fullPath := filepath.Join(config.OutputDir, filename)
+			fullPath := filepath.Join(cfg.OutputDir, filename)
 			dir := filepath.Dir(fullPath)
 
 			if err := os.MkdirAll(dir, 0755); err != nil {
@@ -186,6 +191,21 @@ func createProjectFiles(structure *ProjectStructure) error {
 	return nil
 }
 
+func dumpsrc() {
+	files := []string{"main.go", "go.mod", "system-prompt.txt"}
+	for _, file := range files {
+		content, err := ioutil.ReadFile(file)
+		if err != nil {
+			log.Printf("Error reading %s: %v", file, err)
+			continue
+		}
+		fmt.Printf("=== %s ===\n%s\n\n", file, string(content))
+	}
+}
+
 func init() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	if os.Getenv("_MKPROG_DUMP") != "" {
+		dumpsrc()
+		os.Exit(0)
+	}
 }

@@ -1,17 +1,17 @@
 # mkprog
 
-mkprog is a command-line tool that generates a complete Go project structure based on a user-provided description. It uses AI to generate code and documentation for the project.
+mkprog is a CLI tool that generates a complete Go project structure based on a user-provided description using AI-powered code generation.
 
 ## Features
 
 - Generate a complete Go project structure
-- Use AI to create code and documentation
-- Support for multiple AI models (Anthropic, OpenAI, Cohere)
-- Custom project templates (CLI tool, web server, library)
-- Dry-run option to preview generated content
+- Use AI-powered code generation (Anthropic API)
+- Support for custom templates
+- Dry-run option for previewing generated content
+- Configurable project types (CLI, web server, library)
 - Concurrent file writing for improved performance
-- Configuration file support
 - Progress indicator during content generation
+- Configuration file support for default values
 
 ## Installation
 
@@ -24,34 +24,36 @@ go install github.com/yourusername/mkprog@latest
 ## Usage
 
 ```
-mkprog [flags]
+mkprog [flags] [project description]
 ```
 
 ### Flags
 
-- `-d, --description`: Project description (required)
-- `-o, --output`: Output directory (required)
-- `-k, --api-key`: API key (required)
-- `-t, --template`: Custom template file (optional)
-- `--dry-run`: Dry run (preview generated content)
-- `-m, --ai-model`: AI model to use (anthropic, openai, cohere)
-- `-p, --project-type`: Project template (cli, web, library)
-- `-v, --verbose`: Verbose output
-- `--temperature`: AI model temperature (default: 0.1)
-- `--max-tokens`: Maximum number of tokens for AI response (default: 8192)
+- `-o, --output string`: Output directory for the generated project
+- `-k, --api-key string`: API key for the AI service
+- `-t, --template string`: Custom template file
+- `-d, --dry-run`: Perform a dry run without creating files
+- `-m, --ai-model string`: AI model to use (anthropic, openai, cohere) (default "anthropic")
+- `-p, --project-type string`: Project template (cli, web, library) (default "cli")
 
 ### Example
 
 ```
-mkprog -d "A CLI tool for managing todo lists" -o ./my-todo-app -k your-api-key -p cli
+mkprog -o ./my-project -k your-api-key "Create a CLI tool that fetches weather data from an API and displays it in a formatted table"
 ```
 
 ## Configuration
 
-You can create a configuration file named `.mkprog.yaml` in your home directory to set default values for flags. For example:
+mkprog supports configuration files in YAML format. The configuration file can be placed in the following locations:
+
+- `$HOME/.config/mkprog/mkprog.yaml`
+- `./mkprog.yaml` (current directory)
+
+Example configuration file:
 
 ```yaml
 api-key: your-default-api-key
+output: ./default-output-directory
 ai-model: anthropic
 project-type: cli
 ```

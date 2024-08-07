@@ -41,4 +41,18 @@ mkprog mkprog "Create a Go program that generates a complete Go project structur
 
 13. Implement proper logging for debugging and monitoring.
 
+14. Add support for generating different types of Go projects (e.g., microservices, REST APIs, GraphQL servers).
+
+15. Implement a plugin system to allow users to extend the program's functionality.
+
+16. Add an interactive mode for users to provide project details step-by-step.
+
+17. Implement a version control system integration (e.g., Git) to initialize the project repository.
+
+18. Add support for generating Dockerfiles and docker-compose files for containerization.
+
+19. Implement a code linting and formatting step using tools like gofmt and golint.
+
+20. Add an option to generate project documentation using tools like GoDoc or pkgsite.
+
 The program should be well-structured, following Go best practices and idiomatic Go programming. It should be easy to use, maintain, and extend in the future."

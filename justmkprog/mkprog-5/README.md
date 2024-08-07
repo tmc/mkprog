@@ -1,26 +1,23 @@
 # mkprog
 
-mkprog is a Go program that generates a complete Go project structure based on a user-provided description. It uses the Anthropic API to generate code and documentation for the project.
+mkprog is a CLI tool that generates a complete Go project structure based on a user-provided description using AI-powered code generation.
 
 ## Features
 
-- Accepts command-line arguments for project configuration
-- Implements a configuration file system to store default values
-- Creates a complete project structure with main package, additional packages, test files, README.md, and go.mod file
-- Uses the Anthropic API to generate code, documentation, and README content
-- Implements concurrent file writing using goroutines for improved performance
-- Adds a progress indicator during content generation
-- Implements a caching system to store and reuse previously generated content
-- Includes a dry-run option to preview generated content without creating files
-- Handles errors gracefully and provides informative error messages
-- Implements proper logging for debugging and monitoring
+- Generate project structure based on a description
+- Support for multiple AI models (Anthropic, OpenAI, Cohere)
+- Custom project templates (CLI tool, web server, library)
+- Dry-run option to preview generated content
+- Concurrent file writing for improved performance
+- Configuration file support
+- Progress indicator during content generation
 
 ## Installation
 
-To install mkprog, make sure you have Go installed on your system, then run:
+To install mkprog, use the following command:
 
 ```
-go get github.com/yourusername/mkprog
+go install github.com/yourusername/mkprog@latest
 ```
 
 ## Usage
@@ -31,27 +28,35 @@ mkprog [flags] [project description]
 
 ### Flags
 
-- `-o, --output string`: Output directory for the generated project (required)
-- `-k, --api-key string`: API key for the AI model (required)
-- `-t, --template string`: Custom template file (optional)
-- `-d, --dry-run`: Preview generated content without creating files
-- `-m, --ai-model string`: AI model to use (anthropic, openai, cohere) (default "anthropic")
-- `-p, --project-type string`: Project template (cli, web, library) (default "cli")
+- `--api-key`: API key for the AI service (required)
+- `--output-dir`: Output directory for the generated project (required)
+- `--custom-template`: Path to a custom template file
+- `--dry-run`: Preview generated content without creating files
+- `--ai-model`: AI model to use (anthropic, openai, cohere)
+- `--project-template`: Project template (cli, web, library)
+- `--max-tokens`: Maximum number of tokens for AI generation
+- `--temperature`: Temperature for AI generation
 
 ### Example
 
 ```
-mkprog -o ./my-project -k your-api-key "Create a CLI tool for managing todo lists"
+mkprog --api-key YOUR_API_KEY --output-dir ./my-project "Create a CLI tool for managing todo lists"
 ```
 
 ## Configuration
 
-mkprog uses a configuration file to store default values for flags. The configuration file is searched for in the following locations:
+You can create a configuration file named `mkprog.yaml` in either `$HOME/.config/mkprog/` or the current directory. The configuration file can include default values for the flags.
 
-1. `$HOME/.config/mkprog/mkprog.yaml`
-2. Current directory: `./mkprog.yaml`
+Example `mkprog.yaml`:
 
-You can also use environment variables prefixed with `MKPROG_` to set configuration values.
+```yaml
+api-key: YOUR_API_KEY
+output-dir: ./projects
+ai-model: anthropic
+project-template: cli
+max-tokens: 8000
+temperature: 0.1
+```
 
 ## License
 

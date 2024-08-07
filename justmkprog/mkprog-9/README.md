@@ -5,15 +5,16 @@ mkprog is a command-line tool that generates a complete Go project structure bas
 ## Features
 
 - Generate a complete Go project structure
-- Use AI-powered code generation (Anthropic API)
+- Use AI models (Anthropic, OpenAI, Cohere) for code generation
 - Support for custom templates
 - Dry-run option to preview generated content
-- Configurable AI model and project type
+- Configuration file support
+- Progress indicator during generation
 - Concurrent file writing for improved performance
 
 ## Installation
 
-To install mkprog, you need to have Go installed on your system. Then, you can use the following command:
+To install mkprog, use the following command:
 
 ```
 go install github.com/yourusername/mkprog@latest
@@ -22,40 +23,35 @@ go install github.com/yourusername/mkprog@latest
 ## Usage
 
 ```
-mkprog [flags] [project description]
+mkprog [flags] "project description"
 ```
 
 ### Flags
 
-- `--output`: Output directory for the generated project (required)
 - `--api-key`: API key for the AI service (required)
+- `--output`: Output directory for the generated project (default: current directory)
 - `--template`: Custom template file (optional)
 - `--dry-run`: Preview generated content without creating files
 - `--ai-model`: AI model to use (anthropic, openai, cohere) (default: anthropic)
 - `--project-type`: Project template (cli, web, library) (default: cli)
-- `--max-tokens`: Maximum number of tokens for AI generation (default: 8192)
-- `--temperature`: Temperature for AI generation (default: 0.1)
 
 ### Example
 
 ```
-mkprog --output ./my-project --api-key your-api-key "Create a CLI tool that converts markdown to HTML"
+mkprog --api-key=your-api-key --output=./my-project "Create a CLI tool that fetches weather data from an API and displays it in a formatted table"
 ```
 
 ## Configuration
 
-mkprog supports configuration files and environment variables. Create a `mkprog.yaml` file in your home directory or the current directory with the following structure:
+mkprog supports configuration files in YAML format. Create a file named `mkprog.yaml` in your home directory (`~/.config/mkprog/mkprog.yaml`) or in the current directory to set default values for flags.
+
+Example configuration file:
 
 ```yaml
-api-key: your-api-key
-output: ./default-output-dir
+api-key: your-default-api-key
 ai-model: anthropic
 project-type: cli
-max-tokens: 8192
-temperature: 0.1
 ```
-
-You can also use environment variables prefixed with `MKPROG_`, e.g., `MKPROG_API_KEY`.
 
 ## License
 

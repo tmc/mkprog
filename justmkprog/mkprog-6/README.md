@@ -1,23 +1,21 @@
 # mkprog
 
-mkprog is a CLI tool that generates a complete Go project structure based on a user-provided description. It uses the Anthropic API (or other selected AI models) to generate code and documentation for the project.
+mkprog is a command-line tool that generates a complete Go project structure based on a user-provided description using AI-powered code generation.
 
 ## Features
 
-- Generate a complete Go project structure
-- Use AI to create code and documentation
-- Support for multiple AI models (Anthropic, OpenAI, Cohere)
-- Custom project templates (CLI tool, web server, library)
-- Concurrent file generation for improved performance
-- Dry-run option to preview generated content
-- Configuration file support for default values
-- Progress indicator during content generation
-- Caching system for previously generated content
-- Comprehensive error handling and logging
+- Generate project structure for CLI tools, web servers, and libraries
+- Use AI models (Anthropic, OpenAI, Cohere) for code generation
+- Custom template support
+- Dry-run mode for previewing generated content
+- Interactive mode for step-by-step project configuration
+- Concurrent file writing for improved performance
+- Configuration file system for storing default values
+- Verbose logging option for debugging
 
 ## Installation
 
-To install mkprog, use the following command:
+To install mkprog, make sure you have Go installed on your system, then run:
 
 ```
 go install github.com/yourusername/mkprog@latest
@@ -26,36 +24,54 @@ go install github.com/yourusername/mkprog@latest
 ## Usage
 
 ```
-mkprog [flags] <project description>
+mkprog [flags] [description]
 ```
 
 ### Flags
 
-- `-o, --output`: Output directory for the generated project
-- `-k, --api-key`: API key for the selected AI model
-- `-t, --template`: Custom template file
-- `-d, --dry-run`: Preview generated content without creating files
-- `-m, --ai-model`: AI model to use (anthropic, openai, cohere)
-- `-p, --project-type`: Project template (cli, web, library)
-- `-v, --verbose`: Enable verbose output
-- `--temperature`: AI model temperature (0.0 - 1.0)
-- `--max-tokens`: Maximum number of tokens for AI response
+- `-o, --output string`: Output directory for the generated project
+- `-k, --api-key string`: API key for the AI service
+- `-t, --template string`: Custom template file
+- `-d, --dry-run`: Perform a dry run without creating files
+- `-m, --ai-model string`: AI model to use (anthropic, openai, cohere) (default "anthropic")
+- `-p, --project-type string`: Project template (cli, web, library) (default "cli")
+- `--temperature float`: AI model temperature (default 0.1)
+- `--max-tokens int`: Maximum number of tokens for AI response (default 8192)
+- `-v, --verbose`: Enable verbose logging
+- `-i, --interactive`: Enable interactive mode
 
-### Example
+### Examples
 
+Generate a CLI project:
 ```
-mkprog -o ./my-project -k your-api-key -m anthropic -p cli "Create a CLI tool that converts markdown to HTML"
+mkprog -o my-cli-project -k your-api-key "A CLI tool for managing todo lists"
+```
+
+Generate a web server project with dry-run:
+```
+mkprog -o my-web-project -k your-api-key -p web -d "A RESTful API server for user authentication"
+```
+
+Use interactive mode:
+```
+mkprog -i
 ```
 
 ## Configuration
 
-You can create a configuration file named `.mkprog.yaml` in your home directory to set default values for flags. For example:
+mkprog supports configuration files in YAML format. Create a file named `mkprog.yaml` in one of the following locations:
+
+- `$HOME/.config/mkprog/mkprog.yaml`
+- `./mkprog.yaml` (current directory)
+
+Example configuration:
 
 ```yaml
-output: ./projects
 api-key: your-default-api-key
 ai-model: anthropic
 project-type: cli
+temperature: 0.2
+max-tokens: 4096
 ```
 
 ## License
