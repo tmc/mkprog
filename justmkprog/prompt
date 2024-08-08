@@ -1,4 +1,4 @@
-mkprog mkprog "Create a Go program that generates a complete Go project structure based on a user-provided description. The program should use the Anthropic API to generate code and documentation for the project. Here's an outline of the desired functionality:
+mkprogmkprog mkprog "Create a Go program that generates a complete Go project structure based on a user-provided description. The program should use the Anthropic API to generate code and documentation for the project. Here's an outline of the desired functionality:
 
 1. Accept command-line arguments for:
    - Project description
