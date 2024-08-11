@@ -9,8 +9,6 @@ prompt_suggestion=$(cat prompt-suggestion.txt)
 # Combine the current prompt and the suggestion
 
 # start output:
-echo -n "mkprog" > prompt
-
 echo "<prompt>$current_prompt</prompt>
 
 Consider the following suggestion for improvement:
@@ -18,4 +16,5 @@ Consider the following suggestion for improvement:
 $prompt_suggestion
 </suggestions>
 
-Please incorporate these suggestions while maintaining the core functionality and purpose of the program." |cgpt -s 'output a new <prompt> with the applied suggestions, the output must begin with "mkprog mkprog \""' -p "mkprog" >> prompt
+Please incorporate these suggestions while maintaining the core functionality and purpose of the program." \
+  | cgpt -s 'output a new <prompt> with the applied suggestions, the output must begin with "mkprog mkprog \""' -p "mkprog" > prompt
