@@ -18,7 +18,7 @@ parquet2json is a command-line tool that converts Parquet files to JSON format. 
 3. Navigate to the project directory and run:
 
 ```
-go build
+go install github.com/tmc/mkprog/tools/parquet2json@latest
 ```
 
 This will create an executable named `parquet2json` in the current directory.
