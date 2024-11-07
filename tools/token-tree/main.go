@@ -257,18 +257,19 @@ func run(dirOnly bool, maxDepth, parallelism int, minTokens int64, sortByWeight,
 	}
 }
 
+// Expects a line in the format: "(optional whitespace)1234 /path/to/file"
 func processLine(tree *Tree, line string) error {
-	parts := strings.SplitN(line, " ", 3)
-	if len(parts) < 3 {
+	parts := strings.Fields(line)
+	if len(parts) < 2 {
 		return fmt.Errorf("invalid input format: %s", line)
 	}
 
-	tokenCount, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
+	tokenCount, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
 		return fmt.Errorf("invalid token count: %s", parts[0])
 	}
 
-	relativePath := strings.TrimSpace(parts[1])
+	relativePath := strings.Join(parts[1:], " ")
 	tree.Insert(relativePath, tokenCount)
 	return nil
 }
