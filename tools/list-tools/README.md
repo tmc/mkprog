@@ -1,64 +1,56 @@
 # list-tools
 
-list-tools is a Go program that lists and describes available tools, including standard Unix/Linux utilities and custom tools defined in the current toolchain.
+A utility for discovering and exploring tools in the mkprog toolchain.
 
 ## Features
 
-- Lists tools relevant to the current toolchain (the current repository)
-- Secure: does not run arbitrary binaries
-- Fast: caches the results of the search
-- Flexible: allows users to specify additional directories to search for tools
-- User-friendly: provides a simple command-line interface
-- Concurrent: uses goroutines to speed up the scanning process
-- Configurable: allows users to specify additional directories to scan for tools via a config file
+- Lists all available tools in the mkprog collection
+- Organizes tools by category for easier discovery
+- Provides detailed descriptions and feature counts
+- Supports filtering by category or search term
+- Outputs in text, JSON, or Markdown formats
+- Caches results for faster repeat use
+- Extracts information directly from README files
 
 ## Installation
 
-1. Ensure you have Go 1.16 or later installed on your system.
-2. Clone this repository:
-   ```
-   git clone https://github.com/yourusername/list-tools.git
-   ```
-3. Change to the project directory:
-   ```
-   cd list-tools
-   ```
-4. Build the program:
-   ```
-   go build
-   ```
+```bash
+go install github.com/tmc/mkprog/tools/list-tools@latest
+```
 
 ## Usage
 
-Run the program without arguments to list all tools:
 ```
-./list-tools
-```
-
-Search for tools by name or description:
-```
-./list-tools -search <term>
+list-tools [options] [path]
 ```
 
-Display detailed information about a specific tool:
-```
-./list-tools -info <tool-name>
-```
+Options:
+- `-c, --category <category>`: Filter tools by category
+- `-f, --format <format>`: Output format (text, json, markdown)
+- `-s, --search <term>`: Search term for filtering tools
+- `-r, --refresh`: Refresh cache and get fresh tool data
+- `-v, --verbose`: Show verbose output
 
-## Configuration
+## Examples
 
-You can specify additional directories to scan for tools by creating a JSON configuration file at `~/.list-tools.json`:
+```bash
+# List all available tools
+list-tools
 
-```json
-{
-  "additionalDirectories": [
-    "/path/to/custom/tools",
-    "/another/path/to/tools"
-  ]
-}
+# Filter tools by category
+list-tools -c "Code Generation"
+
+# Search for tools with specific capabilities
+list-tools -s "visualization"
+
+# Generate documentation in Markdown format
+list-tools -f markdown > tools-docs.md
+
+# Show detailed information with stats
+list-tools -v
 ```
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+MIT
 
