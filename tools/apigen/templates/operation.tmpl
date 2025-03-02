@@ -1,0 +1,53 @@
+{{if .Description}}// {{.Name}} {{.Description}}{{else}}// {{.Name}} sends a {{.Method}} request to {{.Path}}{{end}}
+func (c *Client) {{.Name}}(ctx context.Context{{range .Parameters}}{{if or (eq .In "path") (eq .In "query")}}, {{.ParamName}} {{.Type}}{{end}}{{end}}{{if .RequestBody}}, request {{.RequestType}}{{end}}) ({{if .ResponseType}}{{.ResponseType}}, {{end}}*http.Response, error) {
+	urlPath := "{{.Path}}"
+	
+	{{range .Parameters}}
+	{{if eq .In "path"}}
+	urlPath = strings.Replace(urlPath, "{{.Template}}", fmt.Sprintf("%v", {{.ParamName}}), 1)
+	{{end}}
+	{{end}}
+	
+	{{if .HasQueryParams}}
+	baseURL, err := url.Parse(urlPath)
+	if err != nil {
+		return {{if .ResponseType}}nil, {{end}}nil, fmt.Errorf("failed to parse URL: %v", err)
+	}
+	
+	query := baseURL.Query()
+	{{range .Parameters}}
+	{{if eq .In "query"}}
+	query.Set("{{.Name}}", fmt.Sprintf("%v", {{.ParamName}}))
+	{{end}}
+	{{end}}
+	
+	baseURL.RawQuery = query.Encode()
+	urlPath = baseURL.String()
+	{{end}}
+	
+	{{if .RequestBody}}
+	req, err := c.NewRequest(ctx, "{{.Method}}", urlPath, request)
+	{{else}}
+	req, err := c.NewRequest(ctx, "{{.Method}}", urlPath, nil)
+	{{end}}
+	if err != nil {
+		return {{if .ResponseType}}nil, {{end}}nil, err
+	}
+	
+	{{if .ResponseType}}
+	var response {{.ResponseType}}
+	resp, err := c.Do(req, &response)
+	if err != nil {
+		return nil, nil, err
+	}
+	
+	return response, resp, nil
+	{{else}}
+	resp, err := c.Do(req, nil)
+	if err != nil {
+		return nil, err
+	}
+	
+	return resp, nil
+	{{end}}
+}

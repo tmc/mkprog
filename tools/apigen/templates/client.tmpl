@@ -1,0 +1,114 @@
+// Client is the API client for {{.ServiceName}}
+type Client struct {
+	options    ClientOptions
+	httpClient *http.Client
+}
+
+// ClientOptions contains configuration options for the API client
+type ClientOptions struct {
+	BaseURL    string        `json:"baseURL"`
+	HTTPClient *http.Client  `json:"httpClient"`
+	Timeout    time.Duration `json:"timeout"`
+	UserAgent  string        `json:"userAgent"`
+	Debug      bool          `json:"debug"`
+}
+
+// NewClient creates a new API client with the given options
+func NewClient(options ClientOptions) *Client {
+	if options.HTTPClient == nil {
+		options.HTTPClient = &http.Client{
+			Timeout: options.Timeout,
+		}
+	}
+	
+	if options.Timeout == 0 {
+		options.Timeout = 10 * time.Second
+	}
+	
+	if options.UserAgent == "" {
+		options.UserAgent = "{{.PackageName}}/{{.Version}}"
+	}
+	
+	return &Client{
+		options:    options,
+		httpClient: options.HTTPClient,
+	}
+}
+
+// NewRequest creates a new API request
+func (c *Client) NewRequest(ctx context.Context, method, path string, body interface{}) (*http.Request, error) {
+	u := c.options.BaseURL + path
+	reqURL, err := url.Parse(u)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URL: %v", err)
+	}
+	
+	var reqBody io.Reader = nil
+	if body != nil {
+		bodyBytes, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request body: %v", err)
+		}
+		reqBody = bytes.NewBuffer(bodyBytes)
+	}
+	
+	req, err := http.NewRequestWithContext(ctx, method, reqURL.String(), reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+	
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.options.UserAgent)
+	
+	return req, nil
+}
+
+// Do sends an API request and returns the API response
+func (c *Client) Do(req *http.Request, v interface{}) (*http.Response, error) {
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+	
+	body := resp.Body
+	respBody, err := ioutil.ReadAll(body)
+	if err != nil {
+		return resp, fmt.Errorf("failed to read response body: %v", err)
+	}
+	
+	if resp.StatusCode >= 400 {
+		var apiErr APIError
+		err = json.Unmarshal(respBody, &apiErr)
+		if err == nil {
+			return resp, &apiErr
+		}
+		return resp, fmt.Errorf("HTTP error: %s (%d)", resp.Status, resp.StatusCode)
+	}
+	
+	if v != nil {
+		if w, ok := v.(io.Writer); ok {
+			_, err = w.Write(respBody)
+			return resp, err
+		}
+		
+		err = json.Unmarshal(respBody, v)
+		if err != nil {
+			return resp, fmt.Errorf("failed to unmarshal response: %v", err)
+		}
+	}
+	
+	return resp, nil
+}
+
+// APIError represents an API error response
+type APIError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// Error returns a string representation of the error
+func (e *APIError) Error() string {
+	return fmt.Sprintf("API error: %s (code: %d)", e.Message, e.Code)
+}

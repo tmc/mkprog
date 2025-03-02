@@ -1,0 +1,15 @@
+// {{.Name}} represents a {{.Description}}
+type {{.Name}} struct {
+{{- range .Properties}}
+	{{.Name}} {{.Type}} `json:"{{.JSONName}},omitempty"` {{if .Description}}// {{.Description}}{{end}}
+{{- end}}
+}
+
+// String returns a JSON string representation of the model
+func (m *{{.Name}}) String() string {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "error marshaling to JSON: " + err.Error()
+	}
+	return string(b)
+}
