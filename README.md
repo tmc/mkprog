@@ -1,53 +1,102 @@
-# mkprog
+# mkprog: AI-Powered Go Programming Toolkit
 
-mkprog is a Go program that generates structured content based on user input using the langchaingo library to interact with AI language models.
+`mkprog` is a comprehensive toolkit for AI-assisted Go software development, combining the power of large language models with Unix-style composability. It provides a growing collection of specialized tools that work together to generate, improve, analyze, and visualize Go code.
 
 ## Features
 
-- Generates complete, functional Go programs based on user descriptions
-- Uses the langchaingo library to interact with AI language models
-- Implements error handling and follows Go best practices
-- Generates all necessary files for a runnable Go project
-- Supports custom system prompts and temperature settings
-- Optionally runs goimports on the generated code
+- **Code Generation**: Create complete, functional Go programs from natural language descriptions
+- **Code Analysis**: Visualize dependencies, benchmark performance, and analyze code quality
+- **Code Improvement**: Refactor code, fix common issues, and implement improvements
+- **Unix Philosophy**: Small, focused tools that compose well in pipelines
+- **AI Integration**: Leverages the langchaingo library to interact with advanced AI models
+- **Extensible Toolchain**: Growing set of specialized tools for different aspects of Go development
+
+## Core Tools
+
+| Category | Tools |
+|----------|-------|
+| **Code Generation** | `mkprog`, `better-mkprog`, `mkprogctx` |
+| **Code Improvement** | `refactor`, `fixme`, `fixprog`, `improveprog`, `modprog` |
+| **Planning & Analysis** | `planprog`, `depvis`, `benchviz`, `token-tree`, `askprog` |
+| **Git Integration** | `auto-git-commit`, `git-commit-style` |
+| **Meta Tools** | `list-tools`, `try-analyze` |
+
+For a complete list of tools with descriptions, run:
+```
+tools/list-tools/list-tools
+```
 
 ## Installation
 
-1. Ensure you have Go 1.22 or later installed on your system.
+1. Install Go 1.22 or later
 2. Clone this repository:
    ```
    git clone https://github.com/tmc/mkprog.git
    cd mkprog
    ```
-3. Build the program:
+3. Build the main program:
    ```
    go build
    ```
+4. Build additional tools:
+   ```
+   for dir in tools/*; do 
+     if [ -f "$dir/go.mod" ]; then
+       (cd "$dir" && go build)
+     fi
+   done
+   ```
 
-## Usage
+## Using the Main Program
 
 ```
 ./mkprog [-temp <temperature>] <output_directory> <program_description>
 ```
 
-- `-temp`: Set the temperature for AI generation (0.0 to 1.0, default: 0.1)
-- `<output_directory>`: The directory where the generated program will be created
-- `<program_description>`: A description of the program you want to generate
-
 Example:
 ```
-./mkprog -temp 0.2 my_program "A CLI tool that converts markdown to HTML"
+./mkprog myapp "A web server that provides an API for managing bookmarks"
 ```
 
-## Output
+## Tool Composition Examples
 
-The program will generate a complete Go project in the specified output directory, including:
+The true power of mkprog comes from combining tools in pipelines:
 
-- main.go
-- go.mod
-- README.md
-- LICENSE (MIT)
-- Any other necessary files
+```bash
+# Generate a program and visualize its dependencies
+mkprog myapp "A REST API for task management" && depvis myapp
+
+# Generate a program, fix common issues, and automatically commit
+mkprog myapp "A file conversion utility" && fixme myapp && auto-git-commit
+
+# Plan a feature implementation, then generate it
+planprog "Add authentication to the API" > auth-plan.md
+mkprogctx -plan auth-plan.md -o auth/
+
+# Run benchmarks and visualize the results
+go test -bench=. ./... > bench.txt
+benchviz bench.txt
+```
+
+## Architecture
+
+The mkprog system follows a "Self-Assembling Unix Pipeline Agentic System" architecture:
+
+1. **Core Generator**: The main mkprog tool for generating complete Go programs
+2. **Tool Registry**: A collection of specialized tools for different tasks
+3. **Composition Patterns**: Conventions for how tools work together
+4. **Extension Mechanisms**: Ways to add new capabilities to the system
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for more details.
+
+## Contributing
+
+Contributions are welcome! To add a new tool to the collection:
+
+1. Create a new directory under `tools/`
+2. Implement the tool following the standard pattern
+3. Include appropriate documentation in README.md
+4. Ensure the tool can operate as part of a Unix pipeline
 
 ## License
 
