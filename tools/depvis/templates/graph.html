@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go Dependency Visualization</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #sidebar {
+            background: #f5f5f5;
+            border-right: 1px solid #ddd;
+            padding: 1rem;
+            overflow-y: auto;
+            height: 100vh;
+        }
+        #graph-container {
+            overflow: hidden;
+            height: 100vh;
+            position: relative;
+        }
+        #graph {
+            width: 100%;
+            height: 100%;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .toggle-group {
+            margin-bottom: 10px;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+        }
+        h3 {
+            font-size: 1rem;
+            margin-bottom: 5px;
+        }
+        input[type="search"] {
+            width: 100%;
+            padding: 5px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+        li {
+            padding: 3px 0;
+            cursor: pointer;
+        }
+        li:hover {
+            color: #0366d6;
+        }
+        .selected {
+            font-weight: bold;
+            color: #0366d6;
+        }
+        .package-info {
+            background: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+            border: 1px solid #ddd;
+        }
+        .package-info table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .package-info th, .package-info td {
+            text-align: left;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .package-info th {
+            font-weight: 600;
+        }
+        .stdlib {
+            color: #6c757d;
+            font-style: italic;
+        }
+        button {
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        button:hover {
+            background: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>Dependency Graph</h2>
+        
+        <input type="search" id="package-search" placeholder="Search packages...">
+        
+        <div class="toggle-group">
+            <label>
+                <input type="checkbox" id="toggle-stdlib" checked>
+                Show Standard Library
+            </label>
+        </div>
+        
+        <h3>Packages</h3>
+        <ul id="package-list"></ul>
+        
+        <div id="package-details" class="package-info" style="display: none;">
+            <h3 id="detail-name"></h3>
+            <p id="detail-path"></p>
+            <table>
+                <tr>
+                    <th>Fan In</th>
+                    <td id="detail-fanin"></td>
+                </tr>
+                <tr>
+                    <th>Fan Out</th>
+                    <td id="detail-fanout"></td>
+                </tr>
+            </table>
+            <h4>Imports</h4>
+            <ul id="detail-imports"></ul>
+            <h4>Imported By</h4>
+            <ul id="detail-imported"></ul>
+        </div>
+    </div>
+    <div id="graph-container">
+        <div id="controls">
+            <button id="reset-view">Reset View</button>
+            <button id="export-svg">Export SVG</button>
+            <button id="toggle-physics">Toggle Physics</button>
+        </div>
+        <div id="graph"></div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/vis-network.min.js"></script>
+    <script>
+        // Graph data
+        const graphData = {{ .GraphJSON }};
+        
+        // DOM elements
+        const graphElement = document.getElementById('graph');
+        const packageList = document.getElementById('package-list');
+        const packageSearch = document.getElementById('package-search');
+        const toggleStdlib = document.getElementById('toggle-stdlib');
+        const packageDetails = document.getElementById('package-details');
+        const detailName = document.getElementById('detail-name');
+        const detailPath = document.getElementById('detail-path');
+        const detailFanIn = document.getElementById('detail-fanin');
+        const detailFanOut = document.getElementById('detail-fanout');
+        const detailImports = document.getElementById('detail-imports');
+        const detailImported = document.getElementById('detail-imported');
+        const resetViewBtn = document.getElementById('reset-view');
+        const exportSvgBtn = document.getElementById('export-svg');
+        const togglePhysicsBtn = document.getElementById('toggle-physics');
+        
+        let network;
+        let physicsEnabled = true;
+        
+        // Prepare nodes and edges for vis.js
+        const nodes = new vis.DataSet(
+            graphData.nodes.map(node => ({
+                id: node.id,
+                label: node.name,
+                title: node.path,
+                color: node.isStdlib ? { background: '#f5f5f5', border: '#ddd' } : { background: '#e1f5fe', border: '#81d4fa' },
+                font: { color: node.isStdlib ? '#999' : '#000' },
+                size: 10 + (node.fanIn + node.fanOut),
+                shape: 'box',
+                data: node,
+                group: node.isStdlib ? 'stdlib' : 'userland'
+            }))
+        );
+        
+        const edges = new vis.DataSet(
+            graphData.edges.map(edge => ({
+                from: edge.source,
+                to: edge.target,
+                arrows: 'to',
+                smooth: { type: 'cubicBezier', roundness: 0.2 }
+            }))
+        );
+        
+        // Network options
+        const options = {
+            nodes: {
+                shape: 'box',
+                margin: 10,
+                borderWidth: 1,
+                shadow: true
+            },
+            edges: {
+                width: 1,
+                color: { color: '#999', highlight: '#5599ff' },
+                smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.2 }
+            },
+            layout: {
+                hierarchical: {
+                    direction: 'LR',
+                    sortMethod: 'directed',
+                    levelSeparation: 150,
+                    nodeSpacing: 100
+                }
+            },
+            physics: {
+                hierarchicalRepulsion: {
+                    centralGravity: 0.0,
+                    springLength: 150,
+                    springConstant: 0.01,
+                    nodeDistance: 120,
+                    damping: 0.09
+                },
+                solver: 'hierarchicalRepulsion'
+            },
+            interaction: {
+                navigationButtons: true,
+                keyboard: true,
+                hover: true
+            }
+        };
+        
+        // Create the network
+        function initNetwork() {
+            network = new vis.Network(graphElement, { nodes, edges }, options);
+            
+            // Network events
+            network.on('selectNode', function (params) {
+                const nodeId = params.nodes[0];
+                const node = nodes.get(nodeId);
+                showNodeDetails(node.data);
+                
+                // Highlight connections
+                highlightConnections(nodeId);
+                
+                // Update selected class in list
+                updateSelectedInList(nodeId);
+            });
+            
+            network.on('deselectNode', function () {
+                resetHighlighting();
+                hideNodeDetails();
+            });
+        }
+        
+        // Initialize network
+        initNetwork();
+        
+        // Fill the package list
+        function populatePackageList(filter = '') {
+            packageList.innerHTML = '';
+            
+            const showStdlib = toggleStdlib.checked;
+            const sortedNodes = [...graphData.nodes]
+                .filter(node => {
+                    if (!showStdlib && node.isStdlib) return false;
+                    return node.path.toLowerCase().includes(filter.toLowerCase());
+                })
+                .sort((a, b) => a.path.localeCompare(b.path));
+            
+            sortedNodes.forEach(node => {
+                const li = document.createElement('li');
+                li.textContent = node.path;
+                li.dataset.id = node.id;
+                li.dataset.path = node.path;
+                if (node.isStdlib) {
+                    li.classList.add('stdlib');
+                }
+                li.addEventListener('click', () => {
+                    network.selectNodes([node.id]);
+                    showNodeDetails(node);
+                    highlightConnections(node.id);
+                    network.focus(node.id, {
+                        scale: 1.2,
+                        animation: true
+                    });
+                });
+                packageList.appendChild(li);
+            });
+        }
+        
+        // Show node details in sidebar
+        function showNodeDetails(node) {
+            detailName.textContent = node.name;
+            detailPath.textContent = node.path;
+            detailFanIn.textContent = node.fanIn;
+            detailFanOut.textContent = node.fanOut;
+            
+            // Populate imports
+            detailImports.innerHTML = '';
+            if (node.imports.length === 0) {
+                detailImports.innerHTML = '<li>No imports</li>';
+            } else {
+                node.imports.forEach(imp => {
+                    const li = document.createElement('li');
+                    li.textContent = imp;
+                    detailImports.appendChild(li);
+                });
+            }
+            
+            // Populate imported by
+            detailImported.innerHTML = '';
+            if (node.imported.length === 0) {
+                detailImported.innerHTML = '<li>Not imported by any package</li>';
+            } else {
+                node.imported.forEach(imp => {
+                    const li = document.createElement('li');
+                    li.textContent = imp;
+                    detailImported.appendChild(li);
+                });
+            }
+            
+            packageDetails.style.display = 'block';
+        }
+        
+        // Hide node details
+        function hideNodeDetails() {
+            packageDetails.style.display = 'none';
+        }
+        
+        // Highlight connections for a node
+        function highlightConnections(nodeId) {
+            // Reset all nodes and edges
+            nodes.forEach(node => {
+                node.color = node.data.isStdlib ? 
+                    { background: '#f5f5f5', border: '#ddd' } : 
+                    { background: '#e1f5fe', border: '#81d4fa' };
+                node.font = { color: node.data.isStdlib ? '#999' : '#000' };
+                nodes.update(node);
+            });
+            
+            edges.forEach(edge => {
+                edge.color = { color: '#999', highlight: '#5599ff' };
+                edge.width = 1;
+                edges.update(edge);
+            });
+            
+            // Highlight the selected node
+            const selectedNode = nodes.get(nodeId);
+            selectedNode.color = { background: '#ffeb3b', border: '#fdd835' };
+            selectedNode.font = { color: '#000', bold: true };
+            nodes.update(selectedNode);
+            
+            // Highlight direct connections
+            edges.forEach(edge => {
+                if (edge.from === nodeId || edge.to === nodeId) {
+                    edge.color = { color: '#ff5722' };
+                    edge.width = 2;
+                    edges.update(edge);
+                    
+                    // Highlight connected nodes
+                    const connectedId = edge.from === nodeId ? edge.to : edge.from;
+                    const connectedNode = nodes.get(connectedId);
+                    connectedNode.color = { background: '#bbdefb', border: '#64b5f6' };
+                    nodes.update(connectedNode);
+                }
+            });
+        }
+        
+        // Reset highlighting
+        function resetHighlighting() {
+            nodes.forEach(node => {
+                node.color = node.data.isStdlib ? 
+                    { background: '#f5f5f5', border: '#ddd' } : 
+                    { background: '#e1f5fe', border: '#81d4fa' };
+                node.font = { color: node.data.isStdlib ? '#999' : '#000' };
+                nodes.update(node);
+            });
+            
+            edges.forEach(edge => {
+                edge.color = { color: '#999' };
+                edge.width = 1;
+                edges.update(edge);
+            });
+            
+            // Remove selected class from list
+            const selectedItems = packageList.querySelectorAll('.selected');
+            selectedItems.forEach(item => {
+                item.classList.remove('selected');
+            });
+        }
+        
+        // Update selected item in list
+        function updateSelectedInList(nodeId) {
+            const selectedItems = packageList.querySelectorAll('.selected');
+            selectedItems.forEach(item => {
+                item.classList.remove('selected');
+            });
+            
+            const listItem = packageList.querySelector(`[data-id="${nodeId}"]`);
+            if (listItem) {
+                listItem.classList.add('selected');
+                listItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+        
+        // Toggle standard library visibility
+        toggleStdlib.addEventListener('change', function() {
+            const showStdlib = this.checked;
+            
+            // Update nodes visibility
+            nodes.forEach(node => {
+                if (node.data.isStdlib) {
+                    node.hidden = !showStdlib;
+                    nodes.update(node);
+                }
+            });
+            
+            // Update package list
+            populatePackageList(packageSearch.value);
+        });
+        
+        // Search functionality
+        packageSearch.addEventListener('input', function() {
+            populatePackageList(this.value);
+        });
+        
+        // Reset view button
+        resetViewBtn.addEventListener('click', function() {
+            network.fit({
+                animation: true
+            });
+            resetHighlighting();
+            hideNodeDetails();
+        });
+        
+        // Export SVG button
+        exportSvgBtn.addEventListener('click', function() {
+            const svg = network.getSVG({
+                scale: 1.0,
+                fullScreen: false
+            });
+            
+            const blob = new Blob([svg], {type: 'image/svg+xml'});
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'dependency-graph.svg';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+        
+        // Toggle physics button
+        togglePhysicsBtn.addEventListener('click', function() {
+            physicsEnabled = !physicsEnabled;
+            network.setOptions({ physics: physicsEnabled });
+            this.textContent = physicsEnabled ? 'Disable Physics' : 'Enable Physics';
+        });
+        
+        // Initial population
+        populatePackageList();
+    </script>
+</body>
+</html>
