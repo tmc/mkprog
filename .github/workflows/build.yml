@@ -1,0 +1,123 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ master, next, next-next ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.22.x']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+
+    - name: Build main program
+      run: go build -v ./...
+
+    - name: Test main program
+      run: go test -v ./...
+
+    - name: Build all tools
+      run: ./build-all.sh
+      
+    - name: List available tools
+      run: |
+        echo "# Available Tools" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Tool | Description |" >> $GITHUB_STEP_SUMMARY
+        echo "|------|-------------|" >> $GITHUB_STEP_SUMMARY
+        for dir in tools/*; do
+          if [ -d "$dir" ] && [ -f "$dir/README.md" ]; then
+            tool_name=$(basename "$dir")
+            description=$(grep -m 1 -A 1 "^# $tool_name" "$dir/README.md" | tail -1 | sed 's/^[#\- ]*//' | head -c 80)
+            if [ -n "$description" ]; then
+              echo "| $tool_name | $description |" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+        done
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.22.x'
+        
+    - name: Build binaries
+      run: |
+        GOOS=linux GOARCH=amd64 go build -o mkprog-linux-amd64
+        GOOS=darwin GOARCH=amd64 go build -o mkprog-darwin-amd64
+        GOOS=darwin GOARCH=arm64 go build -o mkprog-darwin-arm64
+        GOOS=windows GOARCH=amd64 go build -o mkprog-windows-amd64.exe
+      
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+        
+    - name: Upload Linux Binary
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./mkprog-linux-amd64
+        asset_name: mkprog-linux-amd64
+        asset_content_type: application/octet-stream
+        
+    - name: Upload macOS Intel Binary
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./mkprog-darwin-amd64
+        asset_name: mkprog-darwin-amd64
+        asset_content_type: application/octet-stream
+        
+    - name: Upload macOS Apple Silicon Binary
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./mkprog-darwin-arm64
+        asset_name: mkprog-darwin-arm64
+        asset_content_type: application/octet-stream
+        
+    - name: Upload Windows Binary
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./mkprog-windows-amd64.exe
+        asset_name: mkprog-windows-amd64.exe
+        asset_content_type: application/octet-stream
