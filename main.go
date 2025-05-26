@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/anthropic"
@@ -18,6 +21,64 @@ import (
 
 //go:embed system-prompt.txt
 var systemPrompt string
+
+// Version of mkprog
+const Version = "0.2.0"
+
+// ProgramMetadata contains information about a generated program
+type ProgramMetadata struct {
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	SystemPrompt    string    `json:"system_prompt"`
+	UserPrompt      string    `json:"user_prompt"`
+	GenerationTime  time.Time `json:"generation_time"`
+	GeneratedBy     string    `json:"generated_by"`
+	GeneratorPath   string    `json:"generator_path,omitempty"`
+	ToolsAvailable  []string  `json:"tools_available,omitempty"`
+	MkprogVersion   string    `json:"mkprog_version"`
+}
+
+// DiscoverTools finds available tools in the mkprog toolkit
+func discoverTools() []string {
+	var tools []string
+	toolsDir := filepath.Join(filepath.Dir(os.Args[0]), "tools")
+	
+	// Try to find tools in the standard locations
+	possibleToolsDirs := []string{
+		toolsDir,
+		"/usr/local/bin",
+		"/usr/bin",
+		os.Getenv("GOPATH") + "/bin",
+	}
+	
+	// Add current directory's parent if binary is in tools directory
+	binDir := filepath.Dir(os.Args[0])
+	if strings.Contains(binDir, "tools") {
+		possibleToolsDirs = append(possibleToolsDirs, filepath.Dir(binDir))
+	}
+	
+	for _, dir := range possibleToolsDirs {
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		
+		for _, file := range files {
+			if strings.HasPrefix(file.Name(), "mkprog") || strings.Contains(file.Name(), "prog") {
+				if file.Name() != "mkprog" && file.Name() != filepath.Base(os.Args[0]) {
+					// Check if it's executable
+					path := filepath.Join(dir, file.Name())
+					info, err := os.Stat(path)
+					if err == nil && info.Mode()&0111 != 0 {
+						tools = append(tools, file.Name())
+					}
+				}
+			}
+		}
+	}
+	
+	return tools
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -28,7 +89,29 @@ func main() {
 
 func run() error {
 	temperature := flag.Float64("temp", 0.1, "Set the temperature for AI generation (0.0 to 1.0)")
+	embedPrompt := flag.Bool("embed-prompt", true, "Embed the generation prompt in a PROMPT.md file")
+	embedMetadata := flag.Bool("embed-metadata", true, "Embed program metadata in a .mkprog.json file")
+	listTools := flag.Bool("list-tools", false, "List available tools in the mkprog ecosystem")
+	showVersion := flag.Bool("version", false, "Show version information")
 	flag.Parse()
+	
+	// Check for version flag
+	if *showVersion {
+		fmt.Printf("mkprog version %s\n", Version)
+		return nil
+	}
+	
+	// Discover available tools
+	availableTools := discoverTools()
+	
+	// Check for list-tools flag
+	if *listTools {
+		fmt.Println("Available mkprog tools:")
+		for _, tool := range availableTools {
+			fmt.Printf("  %s\n", tool)
+		}
+		return nil
+	}
 
 	args := flag.Args()
 	if len(args) < 2 {
@@ -40,6 +123,9 @@ func run() error {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
+	// Extract the program description from args
+	programDescription := strings.Join(args[1:], " ")
+
 	ctx := context.Background()
 	llm, err := anthropic.New(
 		anthropic.WithAnthropicBetaHeader(anthropic.MaxTokensAnthropicSonnet35),
@@ -49,10 +135,55 @@ func run() error {
 	}
 
 	fw := &fileWriter{outputDir: outputDir}
+	
+	// Create metadata
+	metadata := ProgramMetadata{
+		Name:           filepath.Base(outputDir),
+		Description:    programDescription,
+		SystemPrompt:   systemPrompt,
+		UserPrompt:     programDescription,
+		GenerationTime: time.Now(),
+		GeneratedBy:    "mkprog",
+		GeneratorPath:  os.Args[0],
+		ToolsAvailable: availableTools,
+		MkprogVersion:  Version,
+	}
+
+	// Create PROMPT.md if requested
+	if *embedPrompt {
+		promptPath := filepath.Join(outputDir, "PROMPT.md")
+		promptContent := fmt.Sprintf("# Generation Prompt\n\nThis program was generated using the following prompt:\n\n```\n%s\n```\n\n## System Prompt\n\n```\n%s\n```", programDescription, systemPrompt)
+		if err := os.WriteFile(promptPath, []byte(promptContent), 0644); err != nil {
+			return fmt.Errorf("failed to write prompt file: %w", err)
+		}
+		fmt.Printf("Created prompt file: %s\n", promptPath)
+	}
+	
+	// Create metadata file if requested
+	if *embedMetadata {
+		metadataPath := filepath.Join(outputDir, ".mkprog.json")
+		metadataJSON, err := json.MarshalIndent(metadata, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+		if err := os.WriteFile(metadataPath, metadataJSON, 0644); err != nil {
+			return fmt.Errorf("failed to write metadata file: %w", err)
+		}
+		fmt.Printf("Created metadata file: %s\n", metadataPath)
+	}
+	
+	// Add commands for self-introspection to the system prompt
+	enhancedSystemPrompt := systemPrompt + "\n\n" +
+		"IMPORTANT: This program should support the following self-introspection flags:\n" +
+		"- --show-prompt: Output the prompt used to generate this program\n" +
+		"- --show-source: Output the source code of a specific file or all files\n" +
+		"- --mkprog-info: Show information about the mkprog ecosystem\n\n" +
+		"Available mkprog tools that can be used with this program:\n" +
+		strings.Join(availableTools, ", ") + "\n"
 
 	messages := []llms.MessageContent{
-		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
-		llms.TextParts(llms.ChatMessageTypeHuman, strings.Join(args, " ")),
+		llms.TextParts(llms.ChatMessageTypeSystem, enhancedSystemPrompt),
+		llms.TextParts(llms.ChatMessageTypeHuman, programDescription),
 	}
 
 	_, err = llm.GenerateContent(ctx,
