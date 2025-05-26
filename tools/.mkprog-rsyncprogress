@@ -1,0 +1,16 @@
+mkprog rsyncprogress "A Go program that processes rsync output and displays a tasteful progress bar. The tool reads rsync output from stdin, parses relevant information such as file transfer progress and overall sync status, and renders a visually appealing progress bar in the terminal. Features include:
+
+1. Real-time parsing of rsync output
+2. Calculation of overall progress percentage
+3. Display of current file being transferred
+4. Estimation of remaining time
+5. Transfer speed indicator
+6. Customizable progress bar appearance
+
+Technical requirements:
+- Go 1.16 or later
+- Uses Go's bufio package for efficient input reading
+- Employs termbox-go or similar library for terminal manipulation
+- Implements goroutines for concurrent processing of input and display updates
+
+The program should handle various rsync output formats and edge cases, such as interrupted transfers or unexpected input. It should also provide options for customization through command-line flags."

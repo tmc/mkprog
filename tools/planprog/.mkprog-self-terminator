@@ -1,0 +1,17 @@
+mkprog self-terminator "A Go program that demonstrates controlled self-termination after performing a specific task. The program will:
+
+1. Accept a command-line argument specifying the number of seconds to run (default: 10 seconds if no argument is provided).
+2. Display a countdown timer showing the remaining time.
+3. Perform a simple task (e.g., printing random numbers) during its runtime.
+4. Gracefully terminate itself using os.Exit() when the specified time has elapsed.
+5. Handle potential errors, such as invalid input for the runtime duration.
+6. Use Go's time package for precise timing and goroutines for concurrent operations.
+
+Technical requirements:
+- Implement in Go 1.16 or later
+- Use the 'flag' package for parsing command-line arguments
+- Utilize the 'os' package for program termination
+- Employ the 'time' package for timing operations
+- Implement proper error handling and logging
+
+This program serves as an educational tool to demonstrate controlled program lifecycle and Go's concurrency features."

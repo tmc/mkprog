@@ -50,12 +50,41 @@ tools/list-tools/list-tools
 ## Using the Main Program
 
 ```
-./mkprog [-temp <temperature>] <output_directory> <program_description>
+./mkprog [flags] <output_directory> <program_description>
 ```
 
-Example:
+### Flags
+
+- `-temp <temperature>`: Set the temperature for AI generation (0.0 to 1.0, default 0.1)
+- `-embed-prompt`: Embed the generation prompt in a PROMPT.md file (default: true)
+- `-embed-metadata`: Embed program metadata in a .mkprog.json file (default: true)
+- `-list-tools`: List available tools in the mkprog ecosystem
+- `-version`: Show version information
+
+### Self-aware Programs
+
+Generated programs now include self-introspection flags:
+- `--show-prompt`: Output the prompt used to generate the program
+- `--show-source`: Output the source code of a specific file or all files
+- `--mkprog-info`: Show information about the mkprog ecosystem
+
+This makes programs self-documenting and able to share their own source code and creation history.
+
+### Examples
+
+Generate a web server:
 ```
 ./mkprog myapp "A web server that provides an API for managing bookmarks"
+```
+
+Generate with a higher temperature for more creativity:
+```
+./mkprog -temp 0.7 creative-app "A creative writing assistant with CLI interface"
+```
+
+Generate without embedding the prompt:
+```
+./mkprog -embed-prompt=false myapp "A simple key-value store with persistence"
 ```
 
 ## Tool Composition Examples
@@ -76,6 +105,24 @@ mkprogctx -plan auth-plan.md -o auth/
 # Run benchmarks and visualize the results
 go test -bench=. ./... > bench.txt
 benchviz bench.txt
+
+# Self-introspection examples
+# --------------------------
+
+# View available tools in your mkprog ecosystem
+mkprog -list-tools
+
+# Output a program's source code for sharing
+cd myapp && go build
+./myapp --show-source main.go | gist -p
+
+# Share your program's generation prompt
+./myapp --show-prompt > PROMPT_USED.md
+
+# Generate a program and see related tools
+mkprog data-analyzer "A tool that analyzes CSV files"
+cd data-analyzer && go build
+./data-analyzer --mkprog-info
 ```
 
 ## Architecture

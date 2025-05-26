@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
+	"golang.org/x/term"
 )
 
 type Node struct {
@@ -40,15 +41,17 @@ type Tree struct {
 	maxDepth     int
 	minTokens    int64
 	sortByWeight bool
+	reverse      bool
 }
 
-func NewTree(dirOnly bool, maxDepth int, minTokens int64, sortByWeight bool) *Tree {
+func NewTree(dirOnly bool, maxDepth int, minTokens int64, sortByWeight bool, reverse bool) *Tree {
 	return &Tree{
 		root:         NewNode("."),
 		dirOnly:      dirOnly,
 		maxDepth:     maxDepth,
 		minTokens:    minTokens,
 		sortByWeight: sortByWeight,
+		reverse:      reverse,
 	}
 }
 
@@ -89,16 +92,124 @@ func (t *Tree) Print(w io.Writer, running bool) {
 	}
 	reset := "\033[0m"
 
-	fmt.Fprintf(w, "%s%s (%d tokens)%s\n", highlight, t.root.name, t.root.tokenCount, reset)
-	t.printNode(w, t.root, "", 0, running)
+	if !t.reverse {
+		fmt.Fprintf(w, "%s%s (%d tokens)%s\n", highlight, t.root.name, t.root.tokenCount, reset)
+		t.printNode(w, t.root, "", 0, running)
+	} else {
+		// For reverse mode, print all children first then the root
+		t.printChildrenOnly(w, t.root, "", 0, running)
+		fmt.Fprintf(w, "%s%s (%d tokens)%s\n", highlight, t.root.name, t.root.tokenCount, reset)
+	}
 }
 
 func (t *Tree) PrintFinal(w io.Writer) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	fmt.Fprintf(w, "%s (%d tokens)\n", t.root.name, t.root.tokenCount)
-	t.printNodeFinal(w, t.root, "", 0)
+	if !t.reverse {
+		fmt.Fprintf(w, "%s (%d tokens)\n", t.root.name, t.root.tokenCount)
+		t.printNodeFinal(w, t.root, "", 0)
+	} else {
+		// For reverse mode, print all children first then the root
+		t.printChildrenFinal(w, t.root, "", 0)
+		fmt.Fprintf(w, "%s (%d tokens)\n", t.root.name, t.root.tokenCount)
+	}
+}
+
+// printChildrenOnly prints only the direct children of the node
+func (t *Tree) printChildrenOnly(w io.Writer, node *Node, prefix string, depth int, running bool) {
+	childrenKeys := t.getSortedChildrenKeys(node)
+
+	for i, key := range childrenKeys {
+		child := node.children[key]
+		childPrefix := ""
+
+		if i == len(childrenKeys)-1 {
+			childPrefix = "└── " // Use standard tree notation
+			if t.reverse {
+				childPrefix = "┌── " // Change notation for reverse mode
+			}
+		} else {
+			childPrefix = "├── " // Use standard tree notation
+			if t.reverse {
+				childPrefix = "┬── " // Change notation for reverse mode
+			}
+		}
+
+		if child.tokenCount >= t.minTokens {
+			highlight := ""
+			if running && time.Since(child.lastUpdated) < 500*time.Millisecond {
+				highlight = "\033[1;97m" // Bold and bright white
+			}
+			reset := "\033[0m"
+
+			if child.isDir {
+				fmt.Fprintf(w, "%s%s%s/ (%d tokens)%s\n", childPrefix, highlight, child.name, child.tokenCount, reset)
+			} else if !t.dirOnly {
+				fmt.Fprintf(w, "%s%s%s (%d tokens)%s\n", childPrefix, highlight, child.name, child.tokenCount, reset)
+			}
+		}
+
+		// Prepare prefix for child's children
+		childrenPrefix := ""
+		if i == len(childrenKeys)-1 {
+			childrenPrefix = "    " // 4 spaces after the last item
+		} else {
+			if t.reverse {
+				childrenPrefix = "│   " // vertical bar + 3 spaces for non-last items
+			} else {
+				childrenPrefix = "│   " // vertical bar + 3 spaces for non-last items
+			}
+		}
+
+		// Process child's children
+		t.printNode(w, child, childrenPrefix, 1, running)
+	}
+}
+
+// printChildrenFinal prints only the direct children of the node (for final output)
+func (t *Tree) printChildrenFinal(w io.Writer, node *Node, prefix string, depth int) {
+	childrenKeys := t.getSortedChildrenKeys(node)
+
+	for i, key := range childrenKeys {
+		child := node.children[key]
+		childPrefix := ""
+
+		if i == len(childrenKeys)-1 {
+			childPrefix = "└── " // Use standard tree notation
+			if t.reverse {
+				childPrefix = "┌── " // Change notation for reverse mode
+			}
+		} else {
+			childPrefix = "├── " // Use standard tree notation
+			if t.reverse {
+				childPrefix = "┬── " // Change notation for reverse mode
+			}
+		}
+
+		if child.tokenCount >= t.minTokens {
+			if child.isDir {
+				fmt.Fprintf(w, "%s%s/ (%d tokens)\n", childPrefix, child.name, child.tokenCount)
+			} else if !t.dirOnly {
+				fmt.Fprintf(w, "%s%s (%d tokens)\n", childPrefix, child.name, child.tokenCount)
+			}
+		}
+
+		// Prepare prefix for child's children
+		childrenPrefix := ""
+		if i == len(childrenKeys)-1 {
+			childrenPrefix = "    " // 4 spaces after the last item
+		} else {
+			if t.reverse {
+				childrenPrefix = "│   " // vertical bar + 3 spaces for non-last items
+			} else {
+				childrenPrefix = "│   " // vertical bar + 3 spaces for non-last items
+			}
+		}
+
+		// Process child's children
+		t.printNodeFinal(w, child, childrenPrefix, 1)
+	}
 }
 
 func (t *Tree) printNode(w io.Writer, node *Node, prefix string, depth int, running bool) {
@@ -112,9 +223,17 @@ func (t *Tree) printNode(w io.Writer, node *Node, prefix string, depth int, runn
 		child := node.children[key]
 		newPrefix := prefix
 		if i == len(childrenKeys)-1 {
-			newPrefix += "└── "
+			if t.reverse {
+				newPrefix += "┌── " // Change notation for reverse mode
+			} else {
+				newPrefix += "└── " // Standard tree notation
+			}
 		} else {
-			newPrefix += "├── "
+			if t.reverse {
+				newPrefix += "┬── " // Change notation for reverse mode
+			} else {
+				newPrefix += "├── " // Standard tree notation
+			}
 		}
 
 		if child.tokenCount >= t.minTokens {
@@ -131,7 +250,18 @@ func (t *Tree) printNode(w io.Writer, node *Node, prefix string, depth int, runn
 			}
 		}
 
-		t.printNode(w, child, newPrefix, depth+1, running)
+		childPrefix := prefix
+		if i == len(childrenKeys)-1 {
+			childPrefix += "    " // 4 spaces after the last item
+		} else {
+			if t.reverse {
+				childPrefix += "│   " // vertical bar + 3 spaces for non-last items
+			} else {
+				childPrefix += "│   " // vertical bar + 3 spaces for non-last items
+			}
+		}
+
+		t.printNode(w, child, childPrefix, depth+1, running)
 	}
 }
 
@@ -146,9 +276,17 @@ func (t *Tree) printNodeFinal(w io.Writer, node *Node, prefix string, depth int)
 		child := node.children[key]
 		newPrefix := prefix
 		if i == len(childrenKeys)-1 {
-			newPrefix += "└── "
+			if t.reverse {
+				newPrefix += "┌── " // Change notation for reverse mode
+			} else {
+				newPrefix += "└── " // Standard tree notation
+			}
 		} else {
-			newPrefix += "├── "
+			if t.reverse {
+				newPrefix += "┬── " // Change notation for reverse mode
+			} else {
+				newPrefix += "├── " // Standard tree notation
+			}
 		}
 
 		if child.tokenCount >= t.minTokens {
@@ -159,7 +297,18 @@ func (t *Tree) printNodeFinal(w io.Writer, node *Node, prefix string, depth int)
 			}
 		}
 
-		t.printNodeFinal(w, child, newPrefix, depth+1)
+		childPrefix := prefix
+		if i == len(childrenKeys)-1 {
+			childPrefix += "    " // 4 spaces after the last item
+		} else {
+			if t.reverse {
+				childPrefix += "│   " // vertical bar + 3 spaces
+			} else {
+				childPrefix += "│   " // vertical bar + 3 spaces
+			}
+		}
+
+		t.printNodeFinal(w, child, childPrefix, depth+1)
 	}
 }
 
@@ -187,19 +336,23 @@ func main() {
 	minTokens := pflag.Int64P("min-tokens", "m", 0, "Minimum token count to display")
 	sortByWeight := pflag.BoolP("sort-weight", "s", false, "Sort by token weight (sum of tokens)")
 	noStream := pflag.BoolP("no-stream", "n", false, "Disable streaming output")
+	reverse := pflag.BoolP("reverse", "r", false, "Print root token count at the end (good for streaming)")
 	pflag.Parse()
 
-	if err := run(*dirOnly, *maxDepth, *parallelism, *minTokens, *sortByWeight, *noStream); err != nil {
+	if err := run(*dirOnly, *maxDepth, *parallelism, *minTokens, *sortByWeight, *noStream, *reverse); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(dirOnly bool, maxDepth, parallelism int, minTokens int64, sortByWeight, noStream bool) error {
-	tree := NewTree(dirOnly, maxDepth, minTokens, sortByWeight)
+func run(dirOnly bool, maxDepth, parallelism int, minTokens int64, sortByWeight, noStream, reverse bool) error {
+	tree := NewTree(dirOnly, maxDepth, minTokens, sortByWeight, reverse)
 	inputChan := make(chan string)
 	errChan := make(chan error, parallelism)
 	doneChan := make(chan struct{})
+
+	// Check if stdout is a terminal
+	isStdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
 
 	var wg sync.WaitGroup
 	for i := 0; i < parallelism; i++ {
@@ -231,7 +384,9 @@ func run(dirOnly bool, maxDepth, parallelism int, minTokens int64, sortByWeight,
 		close(inputChan)
 	}()
 
+	// Handle different output modes based on TTY status and stream flag
 	if noStream {
+		// No streaming mode - wait for completion and print final result
 		<-doneChan
 		tree.PrintFinal(os.Stdout)
 		return nil
@@ -240,20 +395,29 @@ func run(dirOnly bool, maxDepth, parallelism int, minTokens int64, sortByWeight,
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case err := <-errChan:
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+	if isStdoutTTY {
+		// Interactive TTY mode with frequent updates
+		for {
+			select {
+			case err := <-errChan:
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+				}
+			case <-ticker.C:
+				// Clear screen and redraw
+				fmt.Print("\033[2J\033[H") // Clear screen and move cursor to top-left
+				tree.Print(os.Stdout, true)
+			case <-doneChan:
+				fmt.Print("\033[2J\033[H") // Clear screen and move cursor to top-left
+				tree.PrintFinal(os.Stdout)
+				return nil
 			}
-		case <-ticker.C:
-			fmt.Print("\033[2J\033[H") // Clear screen and move cursor to top-left
-			tree.Print(os.Stdout, true)
-		case <-doneChan:
-			fmt.Print("\033[2J\033[H") // Clear screen and move cursor to top-left
-			tree.PrintFinal(os.Stdout)
-			return nil
 		}
+	} else {
+		// Non-TTY mode - print only once at the end
+		<-doneChan
+		tree.PrintFinal(os.Stdout)
+		return nil
 	}
 }
 
